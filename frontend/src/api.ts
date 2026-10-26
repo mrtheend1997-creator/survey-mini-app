@@ -54,7 +54,7 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body ?? {}),
   del: <T>(path: string) => request<T>('DELETE', path),
-  upload: <T>(path: string, form: FormData) => request<T>('POST', path, form, true),
+  upload: <T>(path: string, form: FormData, method: 'POST' | 'PUT' = 'POST') => request<T>(method, path, form, true),
 }
 
 export function qs(params: Record<string, string | number | null | undefined>): string {

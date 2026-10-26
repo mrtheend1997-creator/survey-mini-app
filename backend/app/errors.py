@@ -25,7 +25,7 @@ MESSAGES = {
     "role_not_allowed": ("Bu rolni tayinlay olmaysiz", "Вы не можете назначить эту роль"),
     "cannot_change_self": ("O'z rolingizni o'zgartira olmaysiz", "Нельзя изменить собственную роль"),
     "file_too_large": ("Fayl juda katta", "Файл слишком большой"),
-    "file_type": ("Faqat rasm (JPG, PNG, WEBP, GIF) yuklash mumkin", "Можно загрузить только изображение (JPG, PNG, WEBP, GIF)"),
+    "file_type": ("Bu formatdagi faylni yuklab bo'lmaydi. Rasm tanlang (PNG, JPG, WEBP)", "Этот формат не поддерживается. Выберите изображение (PNG, JPG, WEBP)"),
     "not_published": ("So'rovnoma hali e'lon qilinmagan", "Опрос ещё не опубликован"),
 }
 
