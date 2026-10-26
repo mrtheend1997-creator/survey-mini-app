@@ -1,0 +1,42 @@
+# Render Blueprint for FTI Survey.
+# Creates: PostgreSQL database + one web service that serves both the Mini App (frontend)
+# and the API (backend) on the same https://<name>.onrender.com address.
+# Values marked "sync: false" are asked for in the Render dashboard when the Blueprint is applied.
+
+databases:
+  - name: fti-survey-db
+    databaseName: fti_survey
+    user: fti
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: fti-survey
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fti-survey-db
+          property: connectionString
+      # Telegram bot token from @BotFather (secret, stays on the server)
+      - key: BOT_TOKEN
+        sync: false
+      # Telegram ID of the first Super Admin (several: comma separated)
+      - key: SUPER_ADMIN_TELEGRAM_IDS
+        sync: false
+      # Bot works through a webhook on this same service (no separate worker needed)
+      - key: TELEGRAM_WEBHOOK
+        value: "true"
+      - key: APP_TIMEZONE
+        value: Asia/Tashkent
+      - key: INIT_DATA_MAX_AGE
+        value: "86400"
+      - key: DEV_MODE
+        value: "false"
