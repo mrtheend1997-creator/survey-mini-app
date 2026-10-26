@@ -1,0 +1,28 @@
+# SITE_ADDRESS = your domain (e.g. survey.example.uz) -> HTTPS certificate is issued automatically.
+# Use ":80" for a local test without HTTPS.
+{$SITE_ADDRESS::80} {
+	encode gzip zstd
+
+	handle /api/* {
+		reverse_proxy api:8000
+		request_body {
+			max_size 10MB
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

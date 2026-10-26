@@ -1,0 +1,87 @@
+# FTI Survey: full stack.
+#   docker compose up -d --build
+# Settings are read from the .env file (copy .env.example to .env and fill it in).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fti_survey}
+      POSTGRES_USER: ${POSTGRES_USER:-fti}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fti}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-fti_survey}
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      SUPER_ADMIN_TELEGRAM_IDS: ${SUPER_ADMIN_TELEGRAM_IDS:-}
+      WEBAPP_URL: ${WEBAPP_URL:?Set WEBAPP_URL in .env}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Tashkent}
+      INIT_DATA_MAX_AGE: ${INIT_DATA_MAX_AGE:-86400}
+      UPLOAD_DIR: /data/uploads
+      DEV_MODE: "false"
+    volumes:
+      - uploads:/data/uploads
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      WEBAPP_URL: ${WEBAPP_URL}
+
+  # Daily PostgreSQL dump to ./backups, keeps the last BACKUP_KEEP_DAYS days.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-fti}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-fti_survey}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        f=/backups/fti_survey_$$(date +%Y%m%d_%H%M).sql.gz;
+        pg_dump --no-owner | gzip > "$$f" && echo "backup ok: $$f" || echo "backup FAILED";
+        find /backups -name "fti_survey_*.sql.gz" -mtime +$$KEEP_DAYS -delete;
+        sleep 86400;
+      done'
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:
