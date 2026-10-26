@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import telegram_bot
 from .config import get_settings
 from .errors import ApiError
-from .routers import admin_data, admin_surveys, admin_users, public
+from .routers import admin_data, admin_surveys, admin_users, files, public
 
 log = logging.getLogger("fti")
 settings = get_settings()
@@ -43,10 +43,7 @@ app.include_router(admin_surveys.router)
 app.include_router(admin_data.router)
 app.include_router(admin_users.router)
 app.include_router(telegram_bot.router)
-
-Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-app.mount("/api/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
-
+app.include_router(files.router)
 
 @app.get("/api/health")
 def health():

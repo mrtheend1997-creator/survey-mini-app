@@ -1,15 +1,29 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DEFAULT_LOGO, useLogoUrl } from '../branding'
 import { useApp } from '../app-context'
 
-export function Logo({ size = 40 }: { size?: number }) {
+/** The organisation logo. Never cropped or recoloured; sits on a white plate so it reads in dark mode too. */
+export function Logo({ size, className = '' }: { size?: number; className?: string }) {
+  const { url, custom } = useLogoUrl()
+  const [failed, setFailed] = useState<string | null>(null)
+  const src = failed === url ? DEFAULT_LOGO : url
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-label="FTI">
-      <rect width="64" height="64" rx="16" fill="#0E2742" />
-      <text x="32" y="40" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontWeight="700" fontSize="22" fill="#fff">
-        FTI
-      </text>
-      <rect x="14" y="46" width="36" height="4" rx="2" fill="#16A34A" />
-    </svg>
+    <span
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden bg-white shadow-sm ring-1 ring-black/5 ${custom ? 'rounded-xl p-[6%]' : 'rounded-full'} ${className}`}
+      style={size ? { width: size, height: size } : undefined}
+    >
+      <img
+        src={src}
+        alt="FTI"
+        width={size}
+        height={size}
+        decoding="async"
+        draggable={false}
+        onError={() => setFailed(url)}
+        className="h-full w-full select-none object-contain"
+      />
+    </span>
   )
 }
 
@@ -40,7 +54,7 @@ export function Header() {
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center gap-1.5 px-4 py-2.5">
         <Link to="/" className="flex min-w-0 items-center gap-1.5">
-          <Logo size={32} />
+          <Logo size={36} />
           <span className="whitespace-nowrap text-[15px] font-bold leading-tight max-[359px]:hidden">{t('appName')}</span>
         </Link>
         <div className="ml-auto flex items-center gap-1.5">

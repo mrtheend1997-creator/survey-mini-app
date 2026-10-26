@@ -225,6 +225,17 @@ const uz = {
   rolesHelp:
     'Super Admin — to‘liq ruxsat. Administrator — o‘z so‘rovnomalarini yaratadi va boshqaradi. Tahlilchi — statistikani ko‘radi. Foydalanuvchi — so‘rovnomalardan o‘tadi.',
   // settings
+  changeLogo: '🖼 Logotipni o‘zgartirish',
+  logoDefault: 'Standart FTI logotipi',
+  logoCustom: 'Yuklangan logotip',
+  logoHint: 'PNG, JPG yoki WEBP, 2 MB gacha. Kvadrat rasm tavsiya etiladi.',
+  uploadLogo: '🖼 Yangi logotipni yuklash',
+  resetLogo: '↩️ Standart logotipni qaytarish',
+  confirmResetLogo: 'Standart FTI logotipi qaytarilsinmi?',
+  logoSaved: '✅ Logotip saqlandi',
+  logoResetDone: '✅ Standart logotip qaytarildi',
+  logoBadType: 'Faqat PNG, JPG yoki WEBP rasm yuklash mumkin',
+  logoTooBig: 'Fayl 2 MB dan katta',
   settingsTitle: 'Sozlamalar',
   orgNameUz: 'Tashkilot nomi (o‘zbekcha)',
   orgNameRu: 'Tashkilot nomi (ruscha)',
@@ -456,6 +467,17 @@ const ru: Record<Key, string> = {
   lastSeen: 'Последняя активность',
   rolesHelp:
     'Супер-админ — полный доступ. Администратор — создаёт и управляет своими опросами. Аналитик — просматривает статистику. Пользователь — проходит опросы.',
+  changeLogo: '🖼 Изменить логотип',
+  logoDefault: 'Стандартный логотип FTI',
+  logoCustom: 'Загруженный логотип',
+  logoHint: 'PNG, JPG или WEBP, до 2 МБ. Лучше квадратное изображение.',
+  uploadLogo: '🖼 Загрузить новый логотип',
+  resetLogo: '↩️ Вернуть стандартный логотип',
+  confirmResetLogo: 'Вернуть стандартный логотип FTI?',
+  logoSaved: '✅ Логотип сохранён',
+  logoResetDone: '✅ Стандартный логотип возвращён',
+  logoBadType: 'Можно загрузить только PNG, JPG или WEBP',
+  logoTooBig: 'Файл больше 2 МБ',
   settingsTitle: 'Настройки',
   orgNameUz: 'Название организации (узб.)',
   orgNameRu: 'Название организации (рус.)',
@@ -505,6 +527,8 @@ const AUDIT_UZ: Record<string, string> = {
   'user.block': 'Foydalanuvchi bloklandi',
   'user.unblock': 'Foydalanuvchi blokdan chiqarildi',
   'settings.update': 'Sozlamalar o‘zgartirildi',
+  'settings.logo': 'Logotip o‘zgartirildi',
+  'settings.logo_reset': 'Standart logotip qaytarildi',
 }
 const AUDIT_RU: Record<string, string> = {
   'survey.create': 'Создан опрос',
@@ -524,6 +548,8 @@ const AUDIT_RU: Record<string, string> = {
   'user.block': 'Пользователь заблокирован',
   'user.unblock': 'Пользователь разблокирован',
   'settings.update': 'Изменены настройки',
+  'settings.logo': 'Изменён логотип',
+  'settings.logo_reset': 'Возвращён стандартный логотип',
 }
 export function auditLabel(lang: Lang, action: string): string {
   return (lang === 'uz' ? AUDIT_UZ : AUDIT_RU)[action] ?? action

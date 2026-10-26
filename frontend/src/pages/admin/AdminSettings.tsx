@@ -4,6 +4,7 @@ import { useApp } from '../../app-context'
 import { Button, Card, Input, Label, SectionTitle, Segmented, Spinner } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { auditLabel, formatDate } from '../../i18n'
+import LogoSettings from './LogoSettings'
 
 interface SettingsT {
   org_name_uz: string
@@ -65,6 +66,8 @@ export default function AdminSettings() {
           ]}
         />
       </Card>
+
+      <LogoSettings />
 
       {!form ? (
         <Spinner />

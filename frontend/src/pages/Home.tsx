@@ -27,13 +27,10 @@ export default function Home() {
     <div className="min-h-screen pb-10">
       <Header />
       <main className="mx-auto max-w-3xl px-4">
-        <section className="mt-4 overflow-hidden rounded-3xl bg-gradient-to-br from-navy-800 to-navy-600 p-6 text-white shadow-lg">
-          <div className="flex items-center gap-3">
-            <Logo size={52} />
-            <div className="text-sm font-semibold uppercase tracking-wide text-brand-100">FTI Survey</div>
-          </div>
-          <h1 className="mt-4 text-2xl font-bold leading-tight">{t('welcomeTitle')}</h1>
-          <p className="mt-2 text-[15px] leading-relaxed text-navy-100">{t('welcomeText')}</p>
+        <section className="mt-4 overflow-hidden rounded-3xl bg-gradient-to-br from-navy-800 to-navy-600 p-6 text-center text-white shadow-lg sm:p-8">
+          <Logo className="mx-auto h-24 w-24 shadow-lg sm:h-28 sm:w-28" />
+          <h1 className="mt-4 text-2xl font-bold leading-tight sm:text-3xl">{t('welcomeTitle')}</h1>
+          <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-navy-100">{t('welcomeText')}</p>
           <Button variant="success" block className="mt-5" onClick={() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
             {t('viewSurveys')}
           </Button>

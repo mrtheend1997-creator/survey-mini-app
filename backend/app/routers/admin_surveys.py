@@ -1,7 +1,6 @@
 """Admin: surveys, question builder, image uploads."""
 
 import secrets
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
@@ -24,7 +23,7 @@ from ..models import (
     utcnow,
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
-from ..services import audit
+from ..services import audit, files
 from ..services.surveys import (
     can_manage,
     effective_status,
@@ -449,33 +448,13 @@ def reorder_questions(survey_id: int, body: ReorderIn, user: User = Depends(admi
 
 # ---------------------------------------------------------------- uploads
 
-IMAGE_SIGNATURES = {
-    b"\x89PNG": ".png",
-    b"\xff\xd8\xff": ".jpg",
-    b"GIF8": ".gif",
-}
-
-
-def _detect_ext(head: bytes) -> str | None:
-    for sig, ext in IMAGE_SIGNATURES.items():
-        if head.startswith(sig):
-            return ext
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return ".webp"
-    return None
-
-
 @router.post("/uploads")
-async def upload_image(file: UploadFile = File(...), user: User = Depends(admin_only)):
-    settings = get_settings()
-    data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
-    if len(data) > settings.max_upload_mb * 1024 * 1024:
-        raise ApiError(413, "file_too_large")
-    ext = _detect_ext(data[:16])
-    if ext is None:
-        raise ApiError(415, "file_type")
-    folder = Path(settings.upload_dir)
-    folder.mkdir(parents=True, exist_ok=True)
+async def upload_image(file: UploadFile = File(...), user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Picture for a question. Kept in the database so it survives restarts and redeploys."""
+    max_bytes = get_settings().max_upload_mb * 1024 * 1024
+    data = await file.read(max_bytes + 1)
+    ext = files.validate_image(data, max_bytes)
     name = secrets.token_hex(16) + ext
-    (folder / name).write_bytes(data)
+    files.put(db, f"upload/{name}", data, ext)
+    db.commit()
     return {"url": f"/api/uploads/{name}"}

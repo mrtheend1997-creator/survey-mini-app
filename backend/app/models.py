@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -234,3 +235,19 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict | list | str | int | bool | None] = mapped_column(JSON)
+
+
+class StoredFile(Base):
+    """Images kept in PostgreSQL (logo, question pictures).
+
+    Stored in the database rather than on disk so they survive restarts and redeploys on
+    hosts without a persistent disk (e.g. Render) and are included in database backups.
+    """
+
+    __tablename__ = "stored_files"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
