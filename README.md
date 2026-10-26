@@ -5,7 +5,8 @@
 | Документ | Для кого |
 |---|---|
 | [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Администратору: как создавать опросы, вопросы, смотреть результаты (без программирования) |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | IT-специалисту: установка на сервер, HTTPS, подключение к Telegram, резервные копии |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | IT-специалисту: установка на свой сервер, HTTPS, подключение к Telegram, резервные копии |
+| [docs/RENDER.md](docs/RENDER.md) | Развёртывание на Render через Blueprint (`render.yaml`) |
 
 ## Возможности
 
@@ -50,6 +51,8 @@ frontend/           React-приложение (Mini App)
   src/i18n.ts         тексты интерфейса uz/ru
 bot/                Telegram-бот (кнопка открытия Mini App)
 docker-compose.yml  весь стек: db, api, web (Caddy + HTTPS), bot, backup
+Dockerfile          один контейнер «интерфейс + API» (для Render)
+render.yaml         Blueprint для Render: веб-сервис + PostgreSQL
 ```
 
 ## Безопасность

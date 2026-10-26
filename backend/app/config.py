@@ -18,7 +18,14 @@ class Settings(BaseSettings):
     init_data_max_age: int = 86400
 
     # Public HTTPS address of the Mini App (used for CORS and by the bot).
-    webapp_url: str = "http://localhost:5173"
+    # On Render it may stay empty: RENDER_EXTERNAL_URL (set by Render) is used instead.
+    webapp_url: str = ""
+    render_external_url: str = ""
+    # Folder with the built frontend (frontend/dist). When set, the API also serves the Mini App,
+    # so the interface and the API live on one address (used for Render).
+    static_dir: str = ""
+    # Receive Telegram bot updates via webhook at /api/telegram/webhook (instead of the bot/ container).
+    telegram_webhook: bool = False
     app_timezone: str = "Asia/Tashkent"
     upload_dir: str = "/data/uploads"
     max_upload_mb: int = 5
@@ -33,6 +40,16 @@ class Settings(BaseSettings):
         if v.startswith("postgresql://"):
             return v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
+
+    @property
+    def app_url(self) -> str:
+        first = self.webapp_url.split(",")[0].strip()
+        return (first or self.render_external_url or "http://localhost:5173").rstrip("/")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [o.strip().rstrip("/") for o in self.webapp_url.split(",") if o.strip()]
+        return origins or [self.app_url]
 
     @property
     def super_admin_ids(self) -> set[int]:

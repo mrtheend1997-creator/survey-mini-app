@@ -17,6 +17,13 @@ os.environ["BOT_TOKEN"] = BOT_TOKEN
 os.environ["SUPER_ADMIN_TELEGRAM_IDS"] = str(SUPER_ID)
 os.environ["UPLOAD_DIR"] = f"{_tmp}/uploads"
 os.environ["DEV_MODE"] = "false"
+os.environ["TELEGRAM_WEBHOOK"] = "true"
+os.environ["STATIC_DIR"] = f"{_tmp}/static"
+os.makedirs(f"{_tmp}/static/assets", exist_ok=True)
+with open(f"{_tmp}/static/index.html", "w") as f:
+    f.write("<!doctype html><title>FTI</title>")
+with open(f"{_tmp}/static/assets/app.js", "w") as f:
+    f.write("console.log(1)")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
