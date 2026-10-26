@@ -12,6 +12,8 @@ export interface Me {
   language: 'uz' | 'ru'
   role: Role
   can_admin: boolean
+  can_export: boolean
+  can_publish: boolean
 }
 
 export interface OptionT {
@@ -150,5 +152,32 @@ export interface UserRow {
   role: Role
   is_blocked: boolean
   created_at: string
-  last_seen_at: string
+  last_seen_at: string | null
+  joined_at: string | null
+  display_name: string
+  admin_suspended: boolean
+}
+
+export type StaffRole = 'super_admin' | 'admin' | 'analyst'
+export type AdminStatus = 'active' | 'pending' | 'suspended' | 'blocked'
+
+export interface AdminRow {
+  id: number
+  telegram_id: number
+  name: string
+  display_name: string
+  username: string
+  role: StaffRole
+  status: AdminStatus
+  all_surveys: boolean
+  can_export: boolean
+  can_publish: boolean
+  survey_ids: number[]
+  owned_surveys: number
+  role_assigned_at: string | null
+  role_assigned_by: string | null
+  joined_at: string | null
+  last_seen_at: string | null
+  from_server_settings: boolean
+  is_me: boolean
 }

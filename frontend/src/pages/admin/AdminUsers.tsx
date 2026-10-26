@@ -72,7 +72,7 @@ export default function AdminUsers() {
         {data?.items.map((u) => {
           const isMe = u.id === me?.id
           const canEdit = !isMe && assignable.includes(u.role)
-          const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || '—'
+          const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.display_name || '—'
           return (
             <Card key={u.id} className="!p-3.5">
               <div className="flex items-start justify-between gap-3">
@@ -84,7 +84,7 @@ export default function AdminUsers() {
                     {u.username ? `@${u.username} · ` : ''}ID {u.telegram_id}
                   </div>
                   <div className="text-xs text-muted">
-                    {t('lastSeen')}: {formatDate(u.last_seen_at, lang, true)}
+                    {u.joined_at ? `${t('lastSeen')}: ${formatDate(u.last_seen_at, lang, true)}` : t('adminStatus_pending')}
                   </div>
                 </div>
                 {u.is_blocked && <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">{t('blocked')}</span>}

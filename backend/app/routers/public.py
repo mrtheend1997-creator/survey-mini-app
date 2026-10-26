@@ -13,7 +13,7 @@ from ..errors import ApiError
 from ..models import Answer, AppSetting, Participation, Response, Survey, SurveyVersion, User, utcnow
 from ..schemas import AnswerIn, MeUpdate, ProgressIn, StartIn
 from ..services.answers import meets_minimum, normalize
-from ..services.surveys import effective_status, estimated_minutes, is_open
+from ..services.surveys import can_export, can_publish, effective_status, estimated_minutes, is_open
 
 router = APIRouter(prefix="/api", tags=["public"])
 
@@ -26,8 +26,10 @@ def me_payload(user: User) -> dict:
         "last_name": user.last_name,
         "username": user.username,
         "language": user.language,
-        "role": user.role,
+        "role": user.access_role,
         "can_admin": has_role(user, "analyst"),
+        "can_export": has_role(user, "analyst") and can_export(user),
+        "can_publish": has_role(user, "admin") and can_publish(user),
     }
 
 

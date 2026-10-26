@@ -3,22 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --surface: #F3F6FA;
-  --card: #FFFFFF;
-  --line: #DCE3EC;
-  --ink: #0B1F35;
-  --muted: #5B6B80;
+  --surface: #f3f6fa;
+  --card: #ffffff;
+  --line: #dce3ec;
+  --ink: #0b1f35;
+  --muted: #5b6b80;
   color-scheme: light;
 }
 html.dark {
-  --surface: #0B1520;
+  --surface: #0b1520;
   --card: #132233;
-  --line: #24384E;
-  --ink: #EAF1F8;
-  --muted: #9AABBE;
+  --line: #24384e;
+  --ink: #eaf1f8;
+  --muted: #9aabbe;
   color-scheme: dark;
 }
-html, body, #root { min-height: 100%; }
+html,
+body,
+#root {
+  min-height: 100%;
+}
 body {
   margin: 0;
   background: var(--surface);
@@ -28,13 +32,58 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-input, textarea, select, button { font: inherit; }
-.safe-bottom { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { scrollbar-width: none; }
-@keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(0.97); } 100% { transform: scale(1); } }
-.animate-pop { animation: pop 0.25s ease; }
-@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
-.animate-slide-up { animation: slideUp 0.25s ease; }
-@keyframes fadeIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-.animate-fade-in { animation: fadeIn 0.25s ease; }
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+.safe-bottom {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.animate-pop {
+  animation: pop 0.25s ease;
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.animate-slide-up {
+  animation: slideUp 0.25s ease;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-in {
+  animation: fadeIn 0.25s ease;
+}

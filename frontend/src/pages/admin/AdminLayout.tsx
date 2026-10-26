@@ -5,14 +5,15 @@ import { LangSwitch, Logo } from '../../components/Header'
 import { useTelegramBack } from '../../hooks'
 import type { Key } from '../../i18n'
 
-const NAV: { to: string; icon: string; key: Key; managerOnly?: boolean }[] = [
+const NAV: { to: string; icon: string; key: Key; superOnly?: boolean }[] = [
   { to: '/admin', icon: '🏠', key: 'nav_home' },
   { to: '/admin/surveys', icon: '📋', key: 'nav_surveys' },
   { to: '/admin/questions', icon: '❓', key: 'nav_questions' },
   { to: '/admin/responses', icon: '📨', key: 'nav_responses' },
   { to: '/admin/results', icon: '📊', key: 'nav_results' },
   { to: '/admin/stats', icon: '📈', key: 'nav_stats' },
-  { to: '/admin/users', icon: '👥', key: 'nav_users', managerOnly: true },
+  { to: '/admin/admins', icon: '👥', key: 'nav_admins', superOnly: true },
+  { to: '/admin/users', icon: '🙋', key: 'nav_users', superOnly: true },
   { to: '/admin/settings', icon: '⚙️', key: 'nav_settings' },
 ]
 
@@ -21,8 +22,7 @@ export default function AdminLayout() {
   const location = useLocation()
   const navRef = useRef<HTMLDivElement>(null)
   useTelegramBack()
-  const manager = me?.role === 'admin' || me?.role === 'super_admin'
-  const items = NAV.filter((n) => manager || !n.managerOnly)
+  const items = NAV.filter((n) => me?.role === 'super_admin' || !n.superOnly)
 
   useEffect(() => {
     navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })

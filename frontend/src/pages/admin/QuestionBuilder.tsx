@@ -12,7 +12,7 @@ export default function QuestionBuilder() {
   const { id } = useParams()
   const surveyId = Number(id)
   const navigate = useNavigate()
-  const { t, lang, toast, showError, errorText } = useApp()
+  const { t, lang, me, toast, showError, errorText } = useApp()
   const { data: s, error, loading, reload, setData } = useLoad(() => api.get<AdminSurvey>(`/api/admin/surveys/${surveyId}`), [surveyId])
   const [editing, setEditing] = useState<QuestionT | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -73,7 +73,7 @@ export default function QuestionBuilder() {
       {s.has_unpublished_changes && (
         <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
           <div>{t('unpublishedChanges', { v: s.version_number ?? 1 })}</div>
-          <Button variant="success" size="md" className="mt-3" onClick={() => setConfirmPublish(true)}>
+          <Button variant="success" size="md" className="mt-3" disabled={!me?.can_publish} onClick={() => setConfirmPublish(true)}>
             {t('publishChanges')}
           </Button>
         </div>
@@ -84,7 +84,7 @@ export default function QuestionBuilder() {
           {t('preview')}
         </Button>
         {!s.published_version_id ? (
-          <Button variant="primary" size="md" onClick={() => setConfirmPublish(true)} disabled={!questions.length}>
+          <Button variant="primary" size="md" onClick={() => setConfirmPublish(true)} disabled={!questions.length || !me?.can_publish}>
             {t('publish')}
           </Button>
         ) : (

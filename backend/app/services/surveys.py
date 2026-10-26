@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..auth import has_role
 from ..config import get_settings
 from ..errors import ApiError
 from ..models import Option, Question, Survey, SurveyManager, SurveyVersion, User
@@ -17,13 +16,7 @@ def today() -> date:
     return datetime.now(ZoneInfo(get_settings().app_timezone)).date()
 
 
-def can_manage(db: Session, user: User, survey: Survey) -> bool:
-    if user.role == "super_admin":
-        return True
-    if user.role != "admin":
-        return False
-    if survey.owner_id == user.id:
-        return True
+def _granted(db: Session, user: User, survey: Survey) -> bool:
     return (
         db.scalar(
             select(SurveyManager.id).where(
@@ -32,6 +25,30 @@ def can_manage(db: Session, user: User, survey: Survey) -> bool:
         )
         is not None
     )
+
+
+def can_manage(db: Session, user: User, survey: Survey) -> bool:
+    """Super Admin: every survey. Admin: own surveys, surveys granted to them, or all if allowed."""
+    role = user.access_role
+    if role == "super_admin":
+        return True
+    if role != "admin":
+        return False
+    return user.all_surveys or survey.owner_id == user.id or _granted(db, user, survey)
+
+
+def can_view(db: Session, user: User, survey: Survey) -> bool:
+    if user.access_role == "analyst":
+        return user.all_surveys or _granted(db, user, survey)
+    return can_manage(db, user, survey)
+
+
+def can_export(user: User) -> bool:
+    return user.access_role == "super_admin" or user.can_export
+
+
+def can_publish(user: User) -> bool:
+    return user.access_role == "super_admin" or user.can_publish
 
 
 def get_survey_or_404(db: Session, survey_id: int) -> Survey:
@@ -49,23 +66,24 @@ def get_manageable_survey(db: Session, user: User, survey_id: int) -> Survey:
 
 
 def get_viewable_survey(db: Session, user: User, survey_id: int) -> Survey:
-    """Analysts and Super Admins see results of all surveys; Admins see the ones they manage."""
+    """Results are visible to whoever may manage the survey, and to Analysts allowed to see it."""
     survey = get_survey_or_404(db, survey_id)
-    if user.role in ("super_admin", "analyst"):
-        return survey
-    if not can_manage(db, user, survey):
+    if not can_view(db, user, survey):
         raise ApiError(403, "forbidden")
     return survey
 
 
 def viewable_surveys_query(db: Session, user: User):
     q = select(Survey).where(Survey.deleted_at.is_(None))
-    if user.role == "admin":
-        managed = select(SurveyManager.survey_id).where(SurveyManager.user_id == user.id)
-        q = q.where((Survey.owner_id == user.id) | (Survey.id.in_(managed)))
-    elif not has_role(user, "analyst"):
-        q = q.where(False)
-    return q
+    role = user.access_role
+    granted = select(SurveyManager.survey_id).where(SurveyManager.user_id == user.id)
+    if role == "super_admin" or (role in ("admin", "analyst") and user.all_surveys):
+        return q
+    if role == "admin":
+        return q.where((Survey.owner_id == user.id) | (Survey.id.in_(granted)))
+    if role == "analyst":
+        return q.where(Survey.id.in_(granted))
+    return q.where(False)
 
 
 def live_questions(db: Session, survey_id: int) -> list[Question]:

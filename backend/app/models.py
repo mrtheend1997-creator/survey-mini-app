@@ -23,6 +23,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,11 +64,31 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="user", index=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # NULL until the person opens the app for the first time (e.g. an admin added by Telegram ID)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Administrator management (set by a Super Admin in the "Administrators" section)
+    display_name: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    admin_suspended: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    all_surveys: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    can_export: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    can_publish: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    role_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    role_assigned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     @property
     def full_name(self) -> str:
         return " ".join(p for p in (self.first_name, self.last_name) if p).strip()
+
+    @property
+    def name(self) -> str:
+        return self.full_name or self.display_name or (f"@{self.username}" if self.username else str(self.telegram_id))
+
+    @property
+    def access_role(self) -> str:
+        """The role that is actually in force: a suspended administrator acts as a plain user."""
+        return "user" if self.admin_suspended and self.role != "user" else self.role
 
 
 class Survey(Base):
@@ -102,7 +124,11 @@ class Survey(Base):
 
 
 class SurveyManager(Base):
-    """Extra admins allowed to manage a survey (besides its owner and Super Admins)."""
+    """Access to one survey given by a Super Admin.
+
+    For an Admin it means "may manage this survey" (besides the surveys they own); for an Analyst
+    with `all_surveys` off it means "may see the results of this survey".
+    """
 
     __tablename__ = "survey_managers"
     __table_args__ = (UniqueConstraint("survey_id", "user_id"),)

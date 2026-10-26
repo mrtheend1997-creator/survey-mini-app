@@ -21,7 +21,7 @@ from ..services import audit
 from ..services.answers import readable
 from ..services.excel import build_workbook
 from ..services.results import survey_results
-from ..services.surveys import effective_status, get_viewable_survey, viewable_surveys_query
+from ..services.surveys import can_export, effective_status, get_viewable_survey, viewable_surveys_query
 
 router = APIRouter(prefix="/api/admin", tags=["admin-data"])
 staff = require_role("analyst")
@@ -158,6 +158,8 @@ def export_excel(
     db: Session = Depends(get_db),
 ):
     s = get_viewable_survey(db, user, survey_id)
+    if not can_export(user):
+        raise ApiError(403, "no_export_right")
     return _excel_response(db, user, s, lang, version_id)
 
 
@@ -180,6 +182,8 @@ def export_link(
     db: Session = Depends(get_db),
 ):
     s = get_viewable_survey(db, user, survey_id)
+    if not can_export(user):
+        raise ApiError(403, "no_export_right")
     payload = f"{s.id}.{lang}.{version_id or 0}.{user.id}.{int(_time.time()) + LINK_TTL}"
     stamp = datetime.now(_tz()).strftime("%Y%m%d-%H%M")
     return {
@@ -199,7 +203,7 @@ def export_by_link(token: str, db: Session = Depends(get_db)):
     if not ok:
         raise ApiError(403, "forbidden")
     user = db.get(User, int(uid))
-    if user is None or user.is_blocked:
+    if user is None or user.is_blocked or not can_export(user):
         raise ApiError(403, "forbidden")
     s = get_viewable_survey(db, user, int(sid))
     return _excel_response(db, user, s, lang, int(vid) or None)

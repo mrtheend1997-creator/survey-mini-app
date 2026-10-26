@@ -171,9 +171,11 @@ export default function SurveyForm() {
       {s?.has_unpublished_changes && (
         <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
           <div>{t('unpublishedChanges', { v: s.version_number ?? 1 })}</div>
-          <Button variant="success" size="md" className="mt-3" onClick={() => setConfirm('publish')}>
-            {t('publishChanges')}
-          </Button>
+          {me?.can_publish && (
+            <Button variant="success" size="md" className="mt-3" onClick={() => setConfirm('publish')}>
+              {t('publishChanges')}
+            </Button>
+          )}
         </div>
       )}
 
@@ -280,7 +282,7 @@ export default function SurveyForm() {
           <Button variant="primary" block onClick={onAddQuestions} loading={saving === 'questions'}>
             {t('addQuestions')}
           </Button>
-          {(isNew || !s?.published_version_id) && (
+          {me?.can_publish && (isNew || !s?.published_version_id) && (
             <Button variant="success" block onClick={() => (isNew ? onPublish() : setConfirm('publish'))} loading={saving === 'publish'}>
               {t('publish')}
             </Button>

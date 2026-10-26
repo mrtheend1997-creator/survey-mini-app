@@ -3,7 +3,8 @@
 Every API request carries `Authorization: tma <initData>`. The initData string is signed by
 Telegram with the bot token; we verify the signature on the server, so a client can't pretend
 to be someone else. Roles come from our database (or SUPER_ADMIN_TELEGRAM_IDS), never from the
-client.
+client. A role assigned in advance to a Telegram ID takes effect only once a request signed by
+Telegram for that ID arrives.
 """
 
 import hashlib
@@ -84,10 +85,17 @@ def _upsert_user(db: Session, tg: dict) -> User:
         if getattr(user, attr) != value:
             setattr(user, attr, value)
             changed = True
-    if tg["id"] in settings.super_admin_ids and user.role != "super_admin":
+    if tg["id"] in settings.super_admin_ids and (user.role != "super_admin" or user.admin_suspended):
         user.role = "super_admin"
+        user.admin_suspended = False
+        user.role_assigned_at = user.role_assigned_at or utcnow()
         changed = True
     now = utcnow()
+    if user.joined_at is None:
+        # first verified login of a person a Super Admin added by Telegram ID: the role assigned
+        # in advance starts working now, because Telegram has just confirmed who this is
+        user.joined_at = now
+        changed = True
     last = user.last_seen_at
     if last is not None and last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
@@ -121,7 +129,7 @@ def get_current_user(
 
 def require_role(min_role: str) -> Callable[..., User]:
     def dep(user: User = Depends(get_current_user)) -> User:
-        if ROLE_LEVEL.get(user.role, 0) < ROLE_LEVEL[min_role]:
+        if ROLE_LEVEL.get(user.access_role, 0) < ROLE_LEVEL[min_role]:
             raise ApiError(403, "forbidden")
         return user
 
@@ -129,4 +137,4 @@ def require_role(min_role: str) -> Callable[..., User]:
 
 
 def has_role(user: User, min_role: str) -> bool:
-    return ROLE_LEVEL.get(user.role, 0) >= ROLE_LEVEL[min_role]
+    return ROLE_LEVEL.get(user.access_role, 0) >= ROLE_LEVEL[min_role]

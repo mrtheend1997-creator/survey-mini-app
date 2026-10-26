@@ -36,11 +36,12 @@ def test_roles_and_survey_access(client):
     assert client.post(f"/api/admin/surveys/{s['id']}/publish", headers=AN).status_code == 403
     assert client.get("/api/admin/users", headers=AN).status_code == 403
 
-    # admin can't promote anyone to admin, nor change another admin
+    # only the Super Admin grants or takes away rights: an admin can't promote anyone
     plain = _user_id(client, 2009)
     assert client.patch(f"/api/admin/users/{plain}", json={"role": "admin"}, headers=A).status_code == 403
-    assert client.patch(f"/api/admin/users/{plain}", json={"role": "analyst"}, headers=A).status_code == 200
+    assert client.patch(f"/api/admin/users/{plain}", json={"role": "analyst"}, headers=A).status_code == 403
     assert client.patch(f"/api/admin/users/{b_id}", json={"role": "user"}, headers=A).status_code == 403
+    assert client.get("/api/admin/users", headers=A).status_code == 403
     # nobody changes their own role
     me = client.get("/api/me", headers=SUPER).json()["id"]
     assert client.patch(f"/api/admin/users/{me}", json={"role": "user"}, headers=SUPER).status_code == 403
