@@ -11,7 +11,7 @@ TimeoutPolicy = Literal["submit", "incomplete", "lock"]
 QuestionType = Literal[
     "single", "multiple", "dropdown", "image_choice", "short_text", "text", "scale", "stars", "nps",
     "yes_no", "date", "time", "number", "matrix", "matrix_multi", "ranking", "points", "pairwise",
-    "file", "video", "contact", "region", "info", "rating5", "rating10",
+    "file", "video", "contact", "region", "info", "section", "rating5", "rating10",
 ]
 
 
@@ -59,6 +59,8 @@ class SurveyIn(BaseModel):
     timeout_policy: TimeoutPolicy = "submit"
     max_attempts: int | None = Field(default=None, ge=1, le=1000)
     allow_edit: bool = False
+    thanks_uz: str = Field(default="", max_length=2000)
+    thanks_ru: str = Field(default="", max_length=2000)
 
 
 class SurveyPatch(BaseModel):
@@ -78,6 +80,8 @@ class SurveyPatch(BaseModel):
     timeout_policy: TimeoutPolicy | None = None
     max_attempts: int | None = Field(default=None, ge=1, le=1000)
     allow_edit: bool | None = None
+    thanks_uz: str | None = Field(default=None, max_length=2000)
+    thanks_ru: str | None = Field(default=None, max_length=2000)
 
 
 class StatusIn(BaseModel):
@@ -111,6 +115,7 @@ class QuestionIn(BaseModel):
     hidden: bool = False
     settings: dict | None = None
     time_limit_seconds: int | None = Field(default=None, ge=5, le=3600)
+    logic: dict | None = None
     options: list[OptionIn] = Field(default_factory=list, max_length=200)
     position: int | None = None
 

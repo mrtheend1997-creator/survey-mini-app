@@ -34,6 +34,7 @@ QTYPES = (
     "contact",
     "region",
     "info",
+    "section",  # title of a group of questions, no answer
     # kept so surveys made before the extended builder keep working
     "rating5",
     "rating10",
@@ -46,7 +47,7 @@ OPTION_TYPES = {"single", "multiple", "dropdown", "image_choice", "matrix", "mat
 OTHER_TYPES = {"single", "multiple", "dropdown"}
 # types where the respondent may pick several options (min/max choices apply)
 MULTI_TYPES = {"multiple"}
-NO_ANSWER_TYPES = {"info"}
+NO_ANSWER_TYPES = {"info", "section"}
 # types that collect personal data and therefore can't be used in anonymous surveys
 PERSONAL_TYPES = {"contact"}
 

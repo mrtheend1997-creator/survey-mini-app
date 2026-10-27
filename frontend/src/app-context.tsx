@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError } from './api'
 import { translate, type Key, type Lang } from './i18n'
+import { getItem, setItem } from './storage'
 import type { Me } from './types'
 import { haptic, tg } from './telegram'
 
@@ -24,7 +25,7 @@ interface Ctx {
 const AppCtx = createContext<Ctx | null>(null)
 
 function initialLang(): Lang {
-  const saved = localStorage.getItem('fti_lang')
+  const saved = getItem('fti_lang')
   if (saved === 'uz' || saved === 'ru') return saved
   const code = tg?.initDataUnsafe.user?.language_code ?? ''
   return code.startsWith('ru') ? 'ru' : 'uz' // Uzbek is the main language
@@ -42,7 +43,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
-    localStorage.setItem('fti_lang', l)
+    setItem('fti_lang', l)
     haptic.tap()
     api
       .patch<Me>('/api/me', { language: l })

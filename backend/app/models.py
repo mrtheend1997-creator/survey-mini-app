@@ -104,6 +104,9 @@ class Survey(Base):
     max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # named surveys only: a respondent may reopen and change a submitted response
     allow_edit: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # message on the last screen (empty = the standard "thank you")
+    thanks_uz: Mapped[str] = mapped_column(Text, default="", server_default="")
+    thanks_ru: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     estimated_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -165,6 +168,8 @@ class Question(Base):
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # seconds the respondent has for this question (None = no limit)
     time_limit_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # where the respondent goes after this question, see services/logic.py
+    logic: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -242,6 +247,8 @@ class Response(Base):
     timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # finished by the server because the time ran out
     timed_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # questions the route skipped ("not applicable"), set on submit
+    skipped: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     answers: Mapped[list["Answer"]] = relationship(cascade="all, delete-orphan")
 

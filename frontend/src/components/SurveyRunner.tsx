@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useApp } from '../app-context'
 import { formatDate, pick } from '../i18n'
+import { isSection, routeOf, sectionOf } from '../logic'
 import { isAnswered, isMulti, problem, ratingValues } from '../qtypes'
+import { getItem, setItem } from '../storage'
 import { haptic, telegramUserId } from '../telegram'
 import type { AnswerValue, QuestionT, ResponseState, SurveyCard } from '../types'
 import QuestionInput, { QuestionMedia } from './QuestionInputs'
@@ -36,21 +38,8 @@ function clock(seconds: number): string {
 const tokenKey = (surveyId: number) => `fti_resp_${telegramUserId()}_${surveyId}`
 const backupKey = (token: string) => `fti_ans_${token}`
 
-function safeGet(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-function safeSet(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key)
-    else localStorage.setItem(key, value)
-  } catch {
-    /* storage unavailable */
-  }
-}
+const safeGet = getItem
+const safeSet = setItem
 
 export default function SurveyRunner({
   surveyId,
@@ -220,9 +209,15 @@ export default function SurveyRunner({
     if (token && Object.keys(pending.current).length) flush().catch(() => undefined)
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const q = questions[index]
-  const total = questions.length
-  const isLast = index === total - 1
+  // the questions on the respondent's way: jumps skip the rest, sections are shown as headings
+  const steps = routeOf(questions, answers).filter((x) => !isSection(x))
+  const q = steps[Math.min(index, steps.length - 1)]
+  const total = steps.length
+  const isLast = index >= total - 1
+  useEffect(() => {
+    // a changed answer can shorten the route behind the current position
+    if (total && index > total - 1) setIndex(total - 1)
+  }, [index, total])
 
   // one clock tick per second while a countdown is on the screen
   const ticking = phase === 'questions' && (deadline !== null || !!q?.time_limit_seconds)
@@ -364,8 +359,8 @@ export default function SurveyRunner({
   const finish = async () => {
     if (!q) return
     // check every question locally first
-    for (let i = 0; i < questions.length; i++) {
-      const err = validate(questions[i], answers[String(questions[i].id)])
+    for (let i = 0; i < steps.length; i++) {
+      const err = validate(steps[i], answers[String(steps[i].id)])
       if (err) {
         if (i !== index) goTo(i)
         setTimeout(() => setError(err), 0)
@@ -392,9 +387,10 @@ export default function SurveyRunner({
       haptic.success()
     } catch (e) {
       if (e instanceof ApiError && e.code === 'required_missing') {
-        const missing = (e.extra.missing as { index: number; reason?: string }[] | undefined)?.[0]
-        if (missing) goTo(missing.index)
-        const mq = missing ? questions[missing.index] : undefined
+        const missing = (e.extra.missing as { question_id: number; reason?: string }[] | undefined)?.[0]
+        const at = missing ? steps.findIndex((x) => x.id === missing.question_id) : -1
+        if (at >= 0) goTo(at)
+        const mq = at >= 0 ? steps[at] : undefined
         setTimeout(() => setError(mq ? reasonText(mq, missing?.reason ?? 'required') : t('requiredError')), 0)
         haptic.error()
       } else if (e instanceof ApiError && e.code === 'time_over') {
@@ -409,6 +405,21 @@ export default function SurveyRunner({
       setSubmitting(false)
     }
   }
+
+  // keyboard (computers): Enter goes on, unless typing a long text or pressing a button
+  const enterRef = useRef<() => void>(() => undefined)
+  enterRef.current = () => (isLast ? finish() : next())
+  useEffect(() => {
+    if (phase !== 'questions') return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing || ['TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(el.tagName)) return
+      e.preventDefault()
+      enterRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [phase])
 
   // ---------- render ----------
   const previewBanner =
@@ -434,7 +445,7 @@ export default function SurveyRunner({
             )}
             <div className="mt-5 grid grid-cols-2 gap-2 text-[15px]">
               <div className="rounded-xl bg-navy-50 p-3 dark:bg-white/5">
-                ❓ {t('questionsCount', { n: mode === 'preview' ? questions.length : survey.question_count })}
+                ❓ {t('questionsCount', { n: mode === 'preview' ? questions.filter((x) => !isSection(x)).length : survey.question_count })}
               </div>
               <div className="rounded-xl bg-navy-50 p-3 dark:bg-white/5">⏱️ {t('minutes', { n: survey.estimated_minutes })}</div>
               <div className="col-span-2 rounded-xl bg-navy-50 p-3 dark:bg-white/5">📅 {closes ? t('until', { d: closes }) : t('noDeadline')}</div>
@@ -503,7 +514,7 @@ export default function SurveyRunner({
           </div>
           <h1 className="mt-6 text-3xl font-bold">{outcome.startsWith('time_') ? t('timeUpTitle') : t('thanksTitle')}</h1>
           <p className="mt-2 text-lg text-muted">
-            {outcome === 'completed' ? (mode === 'preview' ? t('previewDone') : t('thanksText')) : t(`outcome_${outcome}`)}
+            {outcome === 'completed' ? (mode === 'preview' ? t('previewDone') : pick(survey, 'thanks', lang) || t('thanksText')) : t(`outcome_${outcome}`)}
           </p>
           <Button block className="mt-8" onClick={onExit}>
             {mode === 'preview' ? t('exitPreview') : t('toHome')}
@@ -516,6 +527,9 @@ export default function SurveyRunner({
   if (!q) return null
   const value = answers[String(q.id)]
   const progress = total ? ((index + (isAnswered(q, value) || q.qtype === 'info' ? 1 : 0)) / total) * 100 : 0
+  const section = sectionOf(questions, q)
+  // the section's note is shown with its first question on the route
+  const firstInSection = !!section && (index === 0 || sectionOf(questions, steps[index - 1]) !== section)
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -553,6 +567,14 @@ export default function SurveyRunner({
       </div>
 
       <main key={animKey} className="animate-fade-in mx-auto w-full max-w-2xl flex-1 px-4 pb-32 pt-5">
+        {section && (
+          <div className={`mb-4 ${firstInSection ? 'rounded-2xl bg-navy-50 p-4 dark:bg-white/5' : ''}`}>
+            <div className="text-sm font-bold uppercase tracking-wide text-navy-700 dark:text-navy-200">📂 {pick(section, 'text', lang)}</div>
+            {firstInSection && pick(section, 'description', lang) && (
+              <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed text-muted">{pick(section, 'description', lang)}</p>
+            )}
+          </div>
+        )}
         <h2 className="text-[21px] font-bold leading-snug">
           {pick(q, 'text', lang)}
           {q.required && (

@@ -8,6 +8,60 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preload" as="image" href="/fti-logo.png" />
     <title>FTI Survey</title>
+    <script>
+      // Plain ES5 on purpose: runs even where the app itself can't (old desktop web views),
+      // and reports why the app failed to start to the server log (/api/client-log).
+      ;(function () {
+        var sent = 0
+        function report(kind, msg) {
+          if (sent++ > 5) return
+          try {
+            var w = window.Telegram && window.Telegram.WebApp
+            var body = JSON.stringify({
+              kind: kind,
+              message: String(msg || '').slice(0, 1000),
+              where: (location.pathname + location.hash.split('tgWebApp')[0]).slice(0, 300),
+              platform: (w && w.platform) || '',
+              version: (w && w.version) || '',
+              agent: navigator.userAgent.slice(0, 300),
+              width: window.innerWidth || 0,
+            })
+            if (navigator.sendBeacon) navigator.sendBeacon('/api/client-log', new Blob([body], { type: 'application/json' }))
+            else {
+              var x = new XMLHttpRequest()
+              x.open('POST', '/api/client-log')
+              x.setRequestHeader('Content-Type', 'application/json')
+              x.send(body)
+            }
+          } catch (e) {}
+        }
+        window.__ftiReport = report
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e.target
+            if (t && t !== window && (t.src || t.href)) report('resource', 'failed to load ' + (t.src || t.href))
+            else report('error', (e.message || '') + ' ' + (e.filename || '') + ':' + (e.lineno || ''))
+          },
+          true,
+        )
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason
+          report('promise', (r && (r.stack || r.message)) || r)
+        })
+        setTimeout(function () {
+          var root = document.getElementById('root')
+          if (root && !root.firstChild) {
+            report('blank', 'the app did not start in 12 s')
+            root.innerHTML =
+              '<div style="font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:24px;text-align:center;color:#1E3A5F;line-height:1.5">' +
+              '<p><b>Ilova ishga tushmadi.</b><br>Telegram ilovasini yangilang va so‘rovnomani qayta oching.</p>' +
+              '<p><b>Приложение не запустилось.</b><br>Обновите Telegram и откройте опрос снова.</p>' +
+              '<button onclick="location.reload()" style="margin-top:12px;padding:12px 20px;border:0;border-radius:12px;background:#0E2742;color:#fff;font-size:16px">↻</button></div>'
+          }
+        }, 12000)
+      })()
+    </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>

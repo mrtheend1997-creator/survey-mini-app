@@ -37,7 +37,7 @@ interface Detail {
   completed_at: string | null
   version_number: number
   respondent: Respondent | null
-  items: { question_id: number; text_uz: string; text_ru: string; answer: string; files: UploadedFile[] }[]
+  items: { question_id: number; text_uz: string; text_ru: string; answer: string; files: UploadedFile[]; status?: 'answered' | 'not_applicable' | 'empty' }[]
 }
 
 export default function AdminResponses() {
@@ -173,6 +173,8 @@ export default function AdminResponses() {
                       </Button>
                     ))}
                   </div>
+                ) : it.status === 'not_applicable' ? (
+                  <div className="mt-0.5 text-base italic text-muted">{t('notApplicable')}</div>
                 ) : (
                   <div className="mt-0.5 whitespace-pre-line text-base">{it.answer || <span className="text-muted">{t('noAnswer')}</span>}</div>
                 )}

@@ -2,7 +2,7 @@
 
 import secrets
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ from ..models import (
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
-from ..services import qtypes, timing
+from ..services import importer, logic, qtypes, timing
 from ..services import permissions as perms
 from ..services.surveys import (
     can_manage,
@@ -35,6 +35,7 @@ from ..services.surveys import (
     live_questions,
     mark_changed,
     publish,
+    question_snapshot,
     viewable_surveys_query,
 )
 
@@ -75,6 +76,8 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "timeout_policy": s.timeout_policy,
         "max_attempts": s.max_attempts,
         "allow_edit": s.allow_edit,
+        "thanks_uz": s.thanks_uz,
+        "thanks_ru": s.thanks_ru,
         "status": s.status,
         "effective_status": effective_status(s),
         "estimated_minutes": s.estimated_minutes,
@@ -123,6 +126,7 @@ def question_out(db: Session, q: Question) -> dict:
         "hidden": q.hidden,
         "settings": q.settings or {},
         "time_limit_seconds": q.time_limit_seconds,
+        "logic": q.logic,
         "options": [
             {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)
@@ -198,6 +202,8 @@ FIELD_PERMS = {
     "allow_repeat": "participants_manage",
     "max_attempts": "participants_manage",
     "allow_edit": "participants_manage",
+    "thanks_uz": "survey_edit",
+    "thanks_ru": "survey_edit",
 }
 
 
@@ -225,6 +231,16 @@ def create_survey(body: SurveyIn, user: User = Depends(admin_only), db: Session 
     db.flush()
     _apply_managers(db, user, s, body.manager_ids)
     audit.log(db, user, "survey.create", "survey", s.id, title=s.title_uz or s.title_ru)
+    db.commit()
+    return survey_out(db, user, s)
+
+
+@router.post("/surveys/import")
+def import_survey(body: dict = Body(...), user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Create a draft survey from a JSON questionnaire (see services/importer.py)."""
+    perms.require(user, "survey_create")
+    s = importer.import_survey(db, body, user)
+    audit.log(db, user, "survey.import", "survey", s.id, title=s.title_uz or s.title_ru)
     db.commit()
     return survey_out(db, user, s)
 
@@ -289,6 +305,17 @@ def _validate_for_publish(db: Session, s: Survey) -> None:
             raise
         if s.survey_type == "anonymous" and q.qtype in qtypes.PERSONAL_TYPES:
             raise ApiError(422, "personal_in_anonymous", {"question_id": q.id})
+    found = logic.check([question_snapshot(db, q) for q in questions])
+    if found["errors"]:
+        first = found["errors"][0]
+        raise ApiError(422, first["code"], {"question_id": first["question_id"], "problems": found["errors"]})
+
+
+@router.get("/surveys/{survey_id}/logic-check")
+def logic_check(survey_id: int, user: User = Depends(staff), db: Session = Depends(get_db)):
+    """Broken or backward jumps and questions nobody can reach, for the builder."""
+    s = get_viewable_survey(db, user, survey_id)
+    return logic.check([question_snapshot(db, q) for q in live_questions(db, s.id) if not q.hidden])
 
 
 @router.post("/surveys/{survey_id}/publish")
@@ -346,13 +373,15 @@ def duplicate_survey(survey_id: int, user: User = Depends(admin_only), db: Sessi
         timeout_policy=src.timeout_policy,
         max_attempts=src.max_attempts,
         allow_edit=src.allow_edit,
+        thanks_uz=src.thanks_uz,
+        thanks_ru=src.thanks_ru,
         owner_id=user.id,
         status="draft",
     )
     db.add(copy)
     db.flush()
-    for q in live_questions(db, src.id):
-        _copy_question(db, q, copy.id, q.position)
+    copied = [(q, _copy_question(db, q, copy.id, q.position)) for q in live_questions(db, src.id)]
+    _remap_logic(db, copied)
     audit.log(db, user, "survey.duplicate", "survey", copy.id, source=src.id)
     db.commit()
     return survey_out(db, user, copy)
@@ -424,6 +453,7 @@ def _apply_question(db: Session, q: Question, body: QuestionIn) -> None:
     q.video_url = _check_video(body.video_url)
     q.hidden = body.hidden
     q.time_limit_seconds = body.time_limit_seconds if body.qtype not in qtypes.NO_ANSWER_TYPES else None
+    q.logic = logic.clean_logic(body.qtype, body.logic)
     q.allow_other = body.allow_other if body.qtype in qtypes.OTHER_TYPES else False
     q.min_choices = body.min_choices if multi else None
     q.max_choices = body.max_choices if multi else None
@@ -468,6 +498,8 @@ def create_question(survey_id: int, body: QuestionIn, user: User = Depends(admin
         perms.require_on(db, user, s, "media_manage")
     if body.time_limit_seconds:
         perms.require_on(db, user, s, "timer_manage")
+    if body.logic:
+        perms.require_on(db, user, s, "logic_manage")
     questions = live_questions(db, s.id)
     pos = len(questions) if body.position is None else max(0, min(body.position, len(questions)))
     for other in questions:
@@ -492,6 +524,8 @@ def update_question(question_id: int, body: QuestionIn, user: User = Depends(adm
     if _media_changed(q, body, db) and "media_manage" not in allowed:
         raise ApiError(403, "no_permission")
     if body.time_limit_seconds != q.time_limit_seconds and "timer_manage" not in allowed:
+        raise ApiError(403, "no_permission")
+    if logic.clean_logic(body.qtype, body.logic) != q.logic and "logic_manage" not in allowed:
         raise ApiError(403, "no_permission")
     if "option_manage" not in allowed:
         if body.qtype in qtypes.OPTION_TYPES:
@@ -544,12 +578,28 @@ def _copy_question(db: Session, q: Question, survey_id: int, position: int) -> Q
         hidden=q.hidden,
         settings=dict(q.settings) if q.settings else None,
         time_limit_seconds=q.time_limit_seconds,
+        logic=q.logic,
     )
     db.add(nq)
     db.flush()
     for o in live_options(db, q.id):
         db.add(Option(question_id=nq.id, position=o.position, text_uz=o.text_uz, text_ru=o.text_ru, image_url=o.image_url))
     return nq
+
+
+def _remap_logic(db: Session, copied: list[tuple[Question, Question]]) -> None:
+    """Point the copies' jumps at the copied questions and options."""
+    qmap = {old.id: new.id for old, new in copied}
+    for old, new in copied:
+        if not old.logic:
+            continue
+        omap = {o.id: n.id for o, n in zip(live_options(db, old.id), live_options(db, new.id))}
+        jumps = []
+        for j in old.logic.get("jumps", []):
+            when = omap.get(j["when"], j["when"]) if isinstance(j["when"], int) else j["when"]
+            to = qmap.get(j["to"], j["to"]) if isinstance(j["to"], int) else j["to"]
+            jumps.append({"when": when, "to": to})
+        new.logic = {"jumps": jumps}
 
 
 @router.post("/questions/{question_id}/duplicate")
@@ -560,6 +610,7 @@ def duplicate_question(question_id: int, user: User = Depends(admin_only), db: S
             other.position += 1
     nq = _copy_question(db, q, s.id, q.position + 1)
     db.flush()
+    _remap_logic(db, [(q, nq)])
     _renumber(db, s.id)
     mark_changed(s)
     audit.log(db, user, "question.duplicate", "question", nq.id, survey_id=s.id, source=q.id)

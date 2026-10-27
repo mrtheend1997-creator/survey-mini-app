@@ -1,0 +1,358 @@
+{
+ "source": "Elektron_tijorat_sorovnoma_uz_kirill.docx",
+ "title": "Oʻzbekiston Respublikasida elektron tijoratning tarqalish darajasi va yoshlarning onlayn savdodagi ishtiroki",
+ "description": "Hurmatli respondent!\n\nMazkur soʻrov aholi oʻrtasida elektron tijoratdan foydalanish darajasini, onlayn xarid qilish odatlarini, raqamli savdo platformalariga boʻlgan ishonchni hamda ulardan foydalanishga toʻsqinlik qiluvchi omillarni oʻrganish maqsadida oʻtkazilmoqda.\n\nSoʻrov anonim shaklda oʻtkaziladi. Olingan maʼlumotlar faqat umumlashtirilgan holda tahliliy va ilmiy-tadqiqot maqsadlarida qoʻllaniladi.\n\nIzoh: mazkur soʻrovda elektron tijorat deganda marketpleyslar, internet-doʻkonlar, mobil ilovalar, Telegram va ijtimoiy tarmoqlar orqali tovar yoki pullik xizmatlarga onlayn buyurtma berish tushuniladi. Toʻlov usuli muhim emas.",
+ "thanks": "Ishtirokingiz uchun rahmat!",
+ "survey_type": "anonymous",
+ "allow_repeat": false,
+ "questions": [
+  {
+   "key": "s1",
+   "qtype": "section",
+   "text": "I. Respondent haqida umumiy maʼlumotlar",
+   "description": ""
+  },
+  {
+   "key": "q1",
+   "text": "Yoshingizni koʻrsating:",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "18-25 yosh",
+    "26–35 yosh",
+    "36 yosh va undan katta"
+   ]
+  },
+  {
+   "key": "q2",
+   "text": "Jinsingiz:",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Erkak",
+    "Ayol"
+   ]
+  },
+  {
+   "key": "q3",
+   "text": "Qaysi hududda yashaysiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "short_text",
+   "hint_ru": "каждый опрашиваемый должен заполнить самостоятельно"
+  },
+  {
+   "key": "q4",
+   "text": "Qanday turdagi aholi punktida yashaysiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Shahar",
+    "Shaharcha",
+    "Qishloq joy"
+   ]
+  },
+  {
+   "key": "q5",
+   "text": "Asosiy mashgʻulotingiz qaysi?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Oliy taʼlim muassasasi, kollej yoki texnikum talabasi",
+    "Yollanma xodim",
+    "Tadbirkor yoki oʻzini oʻzi band qilgan shaxs",
+    "Vaqtincha ishlamayman",
+    "Uy xoʻjaligi bilan shugʻullanaman",
+    "Pensioner",
+    "Boshqa"
+   ]
+  },
+  {
+   "key": "s2",
+   "qtype": "section",
+   "text": "II. Internetdan foydalanish va elektron tijoratga jalb etilganlik",
+   "description": ""
+  },
+  {
+   "key": "q6",
+   "text": "Internetdan qanchalik tez-tez foydalanasiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Har kuni",
+    "Haftada bir necha marta",
+    "Oyda bir necha marta",
+    "Oyda bir martadan kam",
+    "Internetdan foydalanmayman"
+   ]
+  },
+  {
+   "key": "q7",
+   "text": "Internetga kirish uchun asosan qaysi qurilmadan foydalanasiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Smartfon",
+    "Shaxsiy kompyuter yoki noutbuk",
+    "Planshet",
+    "Boshqa shaxsga tegishli yoki umumiy foydalanishdagi qurilma",
+    "Internetdan foydalanmayman"
+   ]
+  },
+  {
+   "key": "q8",
+   "text": "Soʻnggi 12 oy ichida internet orqali shaxsan tovar xarid qilganmisiz yoki pullik xizmatga buyurtma berganmisiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Ha",
+    "Yoʻq, lekin ilgari bunday xaridlarni amalga oshirganman",
+    "Hech qachon amalga oshirmaganman"
+   ],
+   "jumps": [
+    {
+     "when_option": 1,
+     "to": "s4"
+    },
+    {
+     "when_option": 2,
+     "to": "s4"
+    }
+   ]
+  },
+  {
+   "key": "s3",
+   "qtype": "section",
+   "text": "III. Elektron tijoratda xarid faolligi",
+   "description": "Ushbu boʻlimga faqat soʻnggi 12 oyda onlayn xarid qilgan respondentlar javob beradi."
+  },
+  {
+   "key": "q9",
+   "text": "Internet orqali qanchalik tez-tez xarid qilasiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Haftada bir necha marta",
+    "Haftada taxminan bir marta",
+    "Oyda 2–3-marta",
+    "Oyda taxminan bir marta",
+    "Oyda bir martadan kam"
+   ]
+  },
+  {
+   "key": "q10",
+   "text": "Qaysi platformalar orqali koʻproq onlayn xarid qilasiz?",
+   "hint": "Bir nechta javobni tanlash mumkin.",
+   "required": true,
+   "qtype": "multiple",
+   "allow_other": true,
+   "options": [
+    "Uzum Market",
+    "Yandex Market",
+    "Wildberries",
+    "Ozon",
+    "AliExpress",
+    "Pinduoduo",
+    "Telegram-doʻkonlar yoki Telegram-botlar",
+    "Instagram va boshqa ijtimoiy tarmoqlar",
+    "Alohida doʻkonlarning saytlari yoki mobil ilovalari"
+   ]
+  },
+  {
+   "key": "q11",
+   "text": "Soʻnggi 12 oyda internet orqali qaysi turdagi tovar yoki xizmatlarni xarid qildingiz?",
+   "hint": "Bir nechta javobni tanlash mumkin.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Kiyim-kechak, poyabzal va aksessuarlar",
+    "Elektronika va maishiy texnika",
+    "Kosmetika va shaxsiy gigiyena vositalari",
+    "Oziq-ovqat mahsulotlari va tayyor taomlar",
+    "Uy-roʻzgʻor tovarlari",
+    "Kitoblar, kanstovarlar va oʻquv materiallari",
+    "Chiptalar, bron qilish va turistik xizmatlar",
+    "Raqamli mahsulotlar, obunalar va onlayn xizmatlar",
+    "Boshqa tovarlar yoki xizmatlar"
+   ]
+  },
+  {
+   "key": "q12",
+   "text": "Onlayn xarid qilgan oylaringizda bir oy davomida oʻrtacha qancha mablagʻ sarflaysiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "100 ming soʻmgacha",
+    "100–300 ming soʻm",
+    "300–500 ming soʻm",
+    "500 ming – 1 mln soʻm",
+    "1–3 mln soʻm",
+    "3 mln soʻmdan ortiq",
+    "Javob berishga qiynalaman"
+   ]
+  },
+  {
+   "key": "q13",
+   "text": "Onlayn xaridlarda asosan qaysi toʻlov usulidan foydalanasiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Bank kartasi yoki toʻlov ilovasi orqali oldindan toʻlash",
+    "Bank kartasi yoki toʻlov ilovasi orqali tovarni olganda toʻlash",
+    "Tovarni olganda naqd pul bilan toʻlash",
+    "Boʻlib-boʻlib toʻlash (muddatli toʻlov)",
+    "Sotuvchiga bank oʻtkazmasi orqali toʻlash",
+    "Boshqa"
+   ]
+  },
+  {
+   "key": "q14",
+   "text": "Onlayn xaridning qaysi afzalliklari siz uchun eng muhim?",
+   "hint": "Koʻpi bilan uchta javobni tanlang.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Narxlarning nisbatan arzonligi",
+    "Vaqtni tejash",
+    "Tovarlar assortimentining kengligi",
+    "Narxlarni taqqoslash imkoniyati",
+    "Uyga yetkazib berish",
+    "Mahalliy doʻkonlarda mavjud boʻlmagan tovarlarni xarid qilish",
+    "Chegirmalar, aksiyalar va keshbek",
+    "Toʻlovning qulayligi"
+   ],
+   "max_choices": 3
+  },
+  {
+   "key": "q15",
+   "text": "Soʻnggi 12 oyda onlayn xarid paytida qanday muammolarga duch keldingiz?",
+   "hint": "Bir nechta javobni tanlash mumkin.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Tovar tavsif yoki suratga mos kelmadi",
+    "Yetkazib berish kechikdi",
+    "Tovarni qaytarish yoki pulni qaytarib olish qiyin boʻldi",
+    "Qoʻshimcha yoki oldindan koʻrsatilmagan xarajatlar yuzaga keldi",
+    "Shikastlangan yoki sifatsiz tovar keldi",
+    "Firibgarlik holatiga duch keldim",
+    "Toʻlov bilan bogʻliq muammolar yuzaga keldi",
+    "Hech qanday muammoga duch kelmadim"
+   ],
+   "jumps": [
+    {
+     "when": "*",
+     "to": "s5"
+    }
+   ]
+  },
+  {
+   "key": "s4",
+   "qtype": "section",
+   "text": "IV. Elektron tijoratdan foydalanmaslik sabablari",
+   "description": "Ushbu boʻlimga soʻnggi 12 oyda onlayn xarid qilmagan respondentlar javob beradi."
+  },
+  {
+   "key": "q16",
+   "text": "Nima sababdan internet orqali xarid qilmaysiz yoki xarid qilishni toʻxtatgansiz?",
+   "hint": "Bir nechta javobni tanlash mumkin.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Tovarni shaxsan tanlash va tekshirishni afzal koʻraman",
+    "Internet-doʻkonlarga ishonmayman",
+    "Firibgarlikdan xavotirdaman",
+    "Yetkazib berish xarajati yuqori deb hisoblayman",
+    "Savdo platformalaridan foydalanishni bilmayman",
+    "Mos qurilma yoki barqaror internetga ega emasman",
+    "Qulay toʻlov usullari mavjud emas",
+    "Men yashaydigan hududda yetkazib berish imkoniyati cheklangan",
+    "Onlayn xaridga ehtiyoj sezmayman",
+    "Boshqa"
+   ]
+  },
+  {
+   "key": "q17",
+   "text": "Qanday sharoitlarda internet orqali xarid qilishni boshlar edingiz yoki qayta tiklar edingiz?",
+   "hint": "Koʻpi bilan uchta javobni tanlang.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Narxlar arzonroq boʻlsa",
+    "Tovar va pulni qaytarish kafolatlari boʻlsa",
+    "Yetkazib berish tezroq va qulayroq boʻlsa",
+    "Internet-doʻkonlar ishonchliroq boʻlsa",
+    "Tovarni olgandan keyin toʻlash imkoniyati boʻlsa",
+    "Sayt va ilovalardan foydalanish qulayroq boʻlsa",
+    "Internetdan foydalanish imkoniyati yaxshilansa",
+    "Onlayn xarid qilishni rejalashtirmayapman",
+    "Boshqa"
+   ],
+   "max_choices": 3
+  },
+  {
+   "key": "s5",
+   "qtype": "section",
+   "text": "V. Ishonch darajasi va rivojlanish istiqbollari",
+   "description": "Ushbu boʻlimdagi savollarga barcha respondentlar javob beradi."
+  },
+  {
+   "key": "q18",
+   "text": "Onlayn-doʻkonlar va raqamli savdo platformalariga qay darajada ishonasiz?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Toʻliq ishonaman",
+    "Koʻproq ishonaman",
+    "Koʻproq ishonmayman",
+    "Umuman ishonmayman",
+    "Javob berishga qiynalaman"
+   ]
+  },
+  {
+   "key": "q19",
+   "text": "Sizningcha, keyingi 12 oyda onlayn xarid qilish tez-tezligingiz qanday oʻzgaradi?",
+   "hint": "",
+   "required": true,
+   "qtype": "single",
+   "options": [
+    "Sezilarli darajada ortadi",
+    "Biroz ortadi",
+    "Hozirgi darajada qoladi",
+    "Kamayadi",
+    "Onlayn xarid qilishni rejalashtirmayapman",
+    "Javob berishga qiynalaman"
+   ]
+  },
+  {
+   "key": "q20",
+   "text": "Oʻzbekistonda elektron tijoratni rivojlantirish uchun qaysi choralar eng muhim deb hisoblaysiz?",
+   "hint": "Koʻpi bilan uchta javobni tanlang.",
+   "required": true,
+   "qtype": "multiple",
+   "options": [
+    "Onlayn toʻlovlar xavfsizligini oshirish va firibgarlikdan himoya qilish",
+    "Isteʼmolchilar huquqlarini himoya qilish va tovar qaytarish tartibini soddalashtirish",
+    "Qishloq va olis hududlarda yetkazib berish xizmatlarini rivojlantirish",
+    "Yetkazib berish xarajatlarini kamaytirish",
+    "Internet sifati va undan foydalanish imkoniyatini yaxshilash",
+    "Aholining raqamli savodxonligini oshirish",
+    "Narxlar va xarid shartlarining shaffofligini taʼminlash",
+    "Mahalliy internet-doʻkonlar assortimenti va qamrovini kengaytirish",
+    "Boshqa"
+   ],
+   "max_choices": 3
+  }
+ ]
+}

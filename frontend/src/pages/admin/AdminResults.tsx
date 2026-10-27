@@ -39,7 +39,12 @@ function QuestionCard({ q, n }: { q: QuestionResult; n: number }) {
         {q.removed && <span className="ml-2 text-amber-600">· {t('removedQuestion')}</span>}
       </div>
       <div className="mt-1 text-[17px] font-bold leading-snug">{pick(q, 'text', lang)}</div>
-      {st.kind !== 'none' && <div className="mt-1 text-sm text-muted">{t('answeredCount', { n: q.answered })}</div>}
+      {st.kind !== 'none' && (
+        <div className="mt-1 text-sm text-muted">
+          {t('answeredCount', { n: q.answered })}
+          {!!q.not_applicable && ` · ${t('notApplicableCount', { n: q.not_applicable })}`}
+        </div>
+      )}
       <div className="mt-4">
         {st.kind === 'rating' && st.nps && st.nps.score != null && (
           <div className="mb-4 grid grid-cols-4 gap-2 text-center">
@@ -268,9 +273,15 @@ export default function AdminResults() {
 
       <SectionTitle>{t('questions')}</SectionTitle>
       <div className="space-y-3">
-        {data.questions.map((q, i) => (
-          <QuestionCard key={q.id} q={q} n={i + 1} />
-        ))}
+        {data.questions.map((q) =>
+          q.qtype === 'section' ? (
+            <h3 key={q.id} className="pt-3 text-base font-bold text-navy-700 dark:text-navy-200">
+              📂 {pick(q, 'text', lang)}
+            </h3>
+          ) : (
+            <QuestionCard key={q.id} q={q} n={data.questions.filter((x) => x.qtype !== 'section').indexOf(q) + 1} />
+          ),
+        )}
         {data.questions.length === 0 && <div className="text-muted">{t('noData')}</div>}
       </div>
     </div>

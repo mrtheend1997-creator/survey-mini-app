@@ -100,6 +100,7 @@ def question_snapshot(db: Session, q: Question) -> dict:
         "video_url": q.video_url,
         "settings": q.settings or {},
         "time_limit_seconds": q.time_limit_seconds,
+        "logic": q.logic,
         "options": [
             {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)

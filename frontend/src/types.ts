@@ -23,6 +23,7 @@ export type QType =
   | 'contact'
   | 'region'
   | 'info'
+  | 'section'
   | 'rating5'
   | 'rating10'
 export type SurveyStatus = 'draft' | 'active' | 'paused' | 'finished'
@@ -111,8 +112,18 @@ export interface QuestionT {
   hidden?: boolean
   settings?: QSettings
   time_limit_seconds?: number | null
+  logic?: QLogic | null
   options: (OptionT & { id: number })[]
   position?: number
+}
+
+/** Where the respondent goes after a question: "when" is an option id, "yes"/"no"/"unsure" or "*" (any answer). */
+export interface Jump {
+  when: number | 'yes' | 'no' | 'unsure' | '*'
+  to: number | 'end'
+}
+export interface QLogic {
+  jumps: Jump[]
 }
 
 export interface UploadedFile {
@@ -168,6 +179,8 @@ export interface SurveyCard {
   time_limit_minutes?: number | null
   timeout_policy?: TimeoutPolicy
   allow_edit?: boolean
+  thanks_uz?: string
+  thanks_ru?: string
   can_edit?: boolean
   locked?: boolean
   attempts_used?: number
@@ -211,6 +224,8 @@ export interface AdminSurvey {
   timeout_policy?: TimeoutPolicy
   max_attempts?: number | null
   allow_edit?: boolean
+  thanks_uz?: string
+  thanks_ru?: string
   status: SurveyStatus
   effective_status: SurveyStatus
   estimated_minutes: number | null
@@ -246,6 +261,7 @@ export interface StatItem {
 export interface QuestionResult extends QuestionT {
   removed: boolean
   answered: number
+  not_applicable?: number
   stats:
     | { kind: 'choice'; items: StatItem[]; other_texts?: string[]; districts?: StatItem[] }
     | {
