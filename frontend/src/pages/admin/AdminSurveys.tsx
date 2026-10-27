@@ -105,7 +105,7 @@ export default function AdminSurveys() {
                   {t('pause')}
                 </Button>
               )}
-              {s.can_manage && s.status !== 'active' && (
+              {s.can_manage && me?.can_publish && s.status !== 'active' && (
                 <Button
                   size="md"
                   variant="success"

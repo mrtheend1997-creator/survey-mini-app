@@ -123,7 +123,7 @@ function QuestionCard({ q, n }: { q: QuestionResult; n: number }) {
 
 export default function AdminResults() {
   const { id } = useParams()
-  const { t, lang, errorText } = useApp()
+  const { t, lang, me, errorText } = useApp()
   const [versionId, setVersionId] = useState<number | null>(null)
   const { data, error, loading, reload } = useLoad(
     () => api.get<SurveyResults>(`/api/admin/surveys/${id}/results${qs({ version_id: versionId })}`),
@@ -139,9 +139,11 @@ export default function AdminResults() {
       <h1 className="text-2xl font-bold leading-tight">{t('results')}</h1>
       <div className="mt-1 text-[17px] font-semibold text-muted">{pick(data, 'title', lang)}</div>
 
-      <Button variant="success" block className="mt-4" onClick={() => download(data.survey_id, versionId)} loading={busy}>
-        {t('downloadExcel')}
-      </Button>
+      {me?.can_export && (
+        <Button variant="success" block className="mt-4" onClick={() => download(data.survey_id, versionId)} loading={busy}>
+          {t('downloadExcel')}
+        </Button>
+      )}
 
       {data.versions.length > 1 && (
         <div className="mt-3">

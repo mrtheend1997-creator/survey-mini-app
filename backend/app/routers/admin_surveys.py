@@ -26,6 +26,7 @@ from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
 from ..services.surveys import (
     can_manage,
+    can_publish,
     effective_status,
     estimated_minutes,
     get_manageable_survey,
@@ -79,11 +80,18 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "responses_count": total,
         "completed_count": completed,
         "owner": {"id": owner.id, "name": owner.full_name or owner.username} if owner else None,
-        "manager_ids": [m.user_id for m in s.managers],
+        "manager_ids": _admin_manager_ids(db, s),
         "can_manage": can_manage(db, user, s),
         "created_at": s.created_at,
         "updated_at": s.updated_at,
     }
+
+
+def _admin_manager_ids(db: Session, s: Survey) -> list[int]:
+    ids = [m.user_id for m in s.managers]
+    if not ids:
+        return []
+    return list(db.scalars(select(User.id).where(User.id.in_(ids), User.role.in_(("admin", "super_admin")))))
 
 
 def question_out(db: Session, q: Question) -> dict:
@@ -128,10 +136,13 @@ def _check_dates(s: Survey) -> None:
 
 
 def _apply_managers(db: Session, user: User, survey: Survey, ids: list[int] | None) -> None:
-    if ids is None or user.role != "super_admin":
+    """The survey form edits the list of extra managers (Admins). Analysts' access to the survey
+    is managed in the Administrators section and is kept as it is here."""
+    if ids is None or user.access_role != "super_admin":
         return
     valid = set(db.scalars(select(User.id).where(User.id.in_(ids), User.role.in_(("admin", "super_admin")))))
-    survey.managers = [m for m in survey.managers if m.user_id in valid]
+    current_admins = set(_admin_manager_ids(db, survey))
+    survey.managers = [m for m in survey.managers if m.user_id in valid or m.user_id not in current_admins]
     have = {m.user_id for m in survey.managers}
     for uid in valid - have:
         survey.managers.append(SurveyManager(user_id=uid))
@@ -202,6 +213,8 @@ def _validate_for_publish(db: Session, s: Survey) -> None:
 def publish_survey(survey_id: int, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     """Publish the survey (first time) or publish pending changes as a new version."""
     s = get_manageable_survey(db, user, survey_id)
+    if not can_publish(user):
+        raise ApiError(403, "no_publish_right")
     _validate_for_publish(db, s)
     v = publish(db, s, user)
     audit.log(db, user, "survey.publish", "survey", s.id, version=v.number)
@@ -212,6 +225,8 @@ def publish_survey(survey_id: int, user: User = Depends(admin_only), db: Session
 @router.post("/surveys/{survey_id}/status")
 def set_status(survey_id: int, body: StatusIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     s = get_manageable_survey(db, user, survey_id)
+    if body.status == "active" and not can_publish(user):
+        raise ApiError(403, "no_publish_right")
     if body.status == "active" and s.published_version_id is None:
         _validate_for_publish(db, s)
         publish(db, s, user)

@@ -40,7 +40,7 @@ interface Detail {
 
 export default function AdminResponses() {
   const { id } = useParams()
-  const { t, lang, errorText, showError } = useApp()
+  const { t, lang, me, errorText, showError } = useApp()
   const [status, setStatus] = useState<'' | 'completed' | 'in_progress'>('')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<Row[]>([])
@@ -74,9 +74,11 @@ export default function AdminResponses() {
     <div className="pb-8">
       <h1 className="text-2xl font-bold">{t('responsesTitle')}</h1>
       {survey.data && <div className="mt-1 text-[17px] font-semibold text-muted">{pick(survey.data, 'title', lang)}</div>}
-      <Button variant="success" block className="mt-4" loading={busy} onClick={() => download(Number(id))}>
-        {t('downloadExcel')}
-      </Button>
+      {me?.can_export && (
+        <Button variant="success" block className="mt-4" loading={busy} onClick={() => download(Number(id))}>
+          {t('downloadExcel')}
+        </Button>
+      )}
       <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto">
         {(['', 'completed', 'in_progress'] as const).map((s) => (
           <button

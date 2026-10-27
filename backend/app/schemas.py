@@ -26,7 +26,10 @@ class UserOut(ORM):
     role: str
     is_blocked: bool
     created_at: datetime
-    last_seen_at: datetime
+    last_seen_at: datetime | None
+    joined_at: datetime | None
+    display_name: str
+    admin_suspended: bool
 
 
 class MeUpdate(BaseModel):
@@ -120,6 +123,29 @@ class ProgressIn(BaseModel):
 class UserPatch(BaseModel):
     role: Role | None = None
     is_blocked: bool | None = None
+
+
+StaffRole = Literal["super_admin", "admin", "analyst"]
+
+
+class AdminIn(BaseModel):
+    telegram_id: int
+    name: str = Field(default="", max_length=255)
+    role: StaffRole
+    all_surveys: bool | None = None  # default depends on the role
+    can_export: bool = True
+    can_publish: bool = True
+    survey_ids: list[int] = Field(default_factory=list, max_length=1000)
+
+
+class AdminPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    role: StaffRole | None = None
+    suspended: bool | None = None
+    all_surveys: bool | None = None
+    can_export: bool | None = None
+    can_publish: bool | None = None
+    survey_ids: list[int] | None = Field(default=None, max_length=1000)
 
 
 class SettingsIn(BaseModel):

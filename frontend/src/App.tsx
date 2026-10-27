@@ -19,6 +19,7 @@ const AdminResponses = lazy(() => import('./pages/admin/AdminResponses'))
 const AdminResults = lazy(() => import('./pages/admin/AdminResults'))
 const AdminStats = lazy(() => import('./pages/admin/AdminStats'))
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'))
+const AdminAdmins = lazy(() => import('./pages/admin/AdminAdmins'))
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'))
 const Preview = lazy(() => import('./pages/admin/Preview'))
 
@@ -59,6 +60,7 @@ export default function App() {
 
   const staff = me.can_admin
   const manager = me.role === 'admin' || me.role === 'super_admin'
+  const superAdmin = me.role === 'super_admin'
 
   return (
     <Suspense fallback={<Spinner />}>
@@ -80,7 +82,8 @@ export default function App() {
             <Route path="results" element={<SurveyPicker target="results" />} />
             <Route path="results/:id" element={<AdminResults />} />
             <Route path="stats" element={<AdminStats />} />
-            {manager && <Route path="users" element={<AdminUsers />} />}
+            {superAdmin && <Route path="admins" element={<AdminAdmins />} />}
+            {superAdmin && <Route path="users" element={<AdminUsers />} />}
             <Route path="settings" element={<AdminSettings />} />
           </Route>
         )}

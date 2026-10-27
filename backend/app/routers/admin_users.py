@@ -7,19 +7,19 @@ from sqlalchemy.orm import Session
 from ..auth import require_role
 from ..db import get_db
 from ..errors import ApiError
-from ..models import AppSetting, AuditLog, User
+from ..models import AppSetting, AuditLog, SurveyManager, User, utcnow
 from ..schemas import SettingsIn, UserOut, UserPatch
 from ..services import audit
+from ..services.admins import check_can_change
 
 router = APIRouter(prefix="/api/admin", tags=["admin-users"])
 staff = require_role("analyst")
 admin_only = require_role("admin")
 super_only = require_role("super_admin")
 
-# which roles each role may hand out
+# which roles each role may hand out: only a Super Admin grants or takes away rights
 ASSIGNABLE = {
     "super_admin": {"super_admin", "admin", "analyst", "user"},
-    "admin": {"analyst", "user"},
 }
 
 
@@ -29,7 +29,7 @@ def list_users(
     role: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
-    user: User = Depends(admin_only),
+    user: User = Depends(super_only),
     db: Session = Depends(get_db),
 ):
     query = select(User)
@@ -37,41 +37,44 @@ def list_users(
         query = query.where(User.role == role)
     if q:
         like = f"%{q.strip().lstrip('@')}%"
-        conds = [User.first_name.ilike(like), User.last_name.ilike(like), User.username.ilike(like)]
+        conds = [User.first_name.ilike(like), User.last_name.ilike(like), User.username.ilike(like), User.display_name.ilike(like)]
         if q.strip().isdigit():
             conds.append(User.telegram_id == int(q.strip()))
         query = query.where(or_(*conds))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = db.scalars(query.order_by(User.last_seen_at.desc()).offset((page - 1) * page_size).limit(page_size))
+    rows = db.scalars(query.order_by(User.last_seen_at.desc().nulls_last(), User.id.desc()).offset((page - 1) * page_size).limit(page_size))
     counts = dict(db.execute(select(User.role, func.count(User.id)).group_by(User.role)).all())
     return {
         "total": total,
         "items": [UserOut.model_validate(u).model_dump() for u in rows],
         "role_counts": counts,
-        "assignable_roles": sorted(ASSIGNABLE.get(user.role, set())),
+        "assignable_roles": sorted(ASSIGNABLE.get(user.access_role, set())),
     }
 
 
 @router.patch("/users/{user_id}")
-def update_user(user_id: int, body: UserPatch, user: User = Depends(admin_only), db: Session = Depends(get_db)):
+def update_user(user_id: int, body: UserPatch, user: User = Depends(super_only), db: Session = Depends(get_db)):
     target = db.get(User, user_id)
     if target is None:
         raise ApiError(404, "not_found")
-    if target.id == user.id:
-        raise ApiError(403, "cannot_change_self")
-    allowed = ASSIGNABLE.get(user.role, set())
-    # Admins may only manage plain users and analysts.
-    if target.role not in allowed:
-        raise ApiError(403, "role_not_allowed")
-    if body.role is not None:
-        if body.role not in allowed:
-            raise ApiError(403, "role_not_allowed")
+    takes_super_away = (body.role is not None and body.role != "super_admin") or body.is_blocked is True
+    check_can_change(db, user, target, takes_super_away=takes_super_away)
+    if body.role is not None and body.role != target.role:
         old = target.role
         target.role = body.role
+        target.role_assigned_at = utcnow()
+        target.role_assigned_by_id = user.id
+        if body.role == "user":
+            # rights are taken away completely, so a later promotion starts from scratch
+            target.admin_suspended = False
+            for row in db.scalars(select(SurveyManager).where(SurveyManager.user_id == target.id)):
+                db.delete(row)
+        elif old == "user":
+            target.all_surveys = body.role == "analyst"
         audit.log(db, user, "user.role", "user", target.id, old=old, new=body.role, telegram_id=target.telegram_id)
-    if body.is_blocked is not None:
+    if body.is_blocked is not None and body.is_blocked != target.is_blocked:
         target.is_blocked = body.is_blocked
-        audit.log(db, user, "user.block" if body.is_blocked else "user.unblock", "user", target.id)
+        audit.log(db, user, "user.block" if body.is_blocked else "user.unblock", "user", target.id, telegram_id=target.telegram_id)
     db.commit()
     return UserOut.model_validate(target).model_dump()
 
@@ -111,7 +114,7 @@ def audit_log(
     db: Session = Depends(get_db),
 ):
     query = select(AuditLog)
-    if user.role != "super_admin":
+    if user.access_role != "super_admin":
         query = query.where(AuditLog.user_id == user.id)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = db.scalars(query.order_by(AuditLog.id.desc()).offset((page - 1) * page_size).limit(page_size))
@@ -125,7 +128,7 @@ def audit_log(
                 "entity_id": r.entity_id,
                 "details": r.details,
                 "created_at": r.created_at,
-                "user": (r.user.full_name or r.user.username or str(r.user.telegram_id)) if r.user else None,
+                "user": r.user.name if r.user else None,
             }
             for r in rows
         ],
