@@ -110,6 +110,7 @@ export interface QuestionT {
   video_url?: string
   hidden?: boolean
   settings?: QSettings
+  time_limit_seconds?: number | null
   options: (OptionT & { id: number })[]
   position?: number
 }
@@ -163,7 +164,17 @@ export interface SurveyCard {
   allow_repeat: boolean
   completed: boolean
   can_start: boolean
+  closes_at?: string | null
+  time_limit_minutes?: number | null
+  timeout_policy?: TimeoutPolicy
+  allow_edit?: boolean
+  can_edit?: boolean
+  locked?: boolean
+  attempts_used?: number
+  attempts_limit?: number | null
 }
+
+export type TimeoutPolicy = 'submit' | 'incomplete' | 'lock'
 
 export interface SurveyFull extends SurveyCard {
   version_id: number
@@ -172,11 +183,16 @@ export interface SurveyFull extends SurveyCard {
 
 export interface ResponseState {
   token: string
-  status: 'in_progress' | 'completed'
+  status: 'in_progress' | 'completed' | 'timed_out'
   current_index: number
   version_id: number
   questions: QuestionT[]
   answers: Record<string, AnswerValue>
+  /** counted by the server; null when the survey has no time limit */
+  remaining_seconds?: number | null
+  question_time_left?: Record<string, number>
+  editing?: boolean
+  timed_out?: boolean
 }
 
 export interface AdminSurvey {
@@ -189,6 +205,12 @@ export interface AdminSurvey {
   end_date: string | null
   survey_type: SurveyType
   allow_repeat: boolean
+  opens_at?: string | null
+  closes_at?: string | null
+  time_limit_minutes?: number | null
+  timeout_policy?: TimeoutPolicy
+  max_attempts?: number | null
+  allow_edit?: boolean
   status: SurveyStatus
   effective_status: SurveyStatus
   estimated_minutes: number | null
@@ -251,6 +273,7 @@ export interface SurveyResults {
   participants: number
   completed: number
   in_progress: number
+  timed_out?: number
   completion_rate: number
   per_day: { day: string; count: number }[]
   questions: QuestionResult[]

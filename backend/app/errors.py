@@ -32,6 +32,7 @@ MESSAGES = {
     "already_admin": ("Bu foydalanuvchi allaqachon administrator. Uni ro'yxatda tahrirlang", "Этот пользователь уже администратор. Измените его в списке"),
     "invalid_telegram_id": ("Telegram ID noto'g'ri. Faqat raqamlarni kiriting", "Неверный Telegram ID. Введите только цифры"),
     "no_publish_right": ("Sizda so'rovnomalarni e'lon qilish huquqi yo'q", "У вас нет права публиковать опросы"),
+    "no_permission": ("Bu amal uchun sizda ruxsat yo'q", "У вас нет права на это действие"),
     "no_export_right": ("Sizda ma'lumotlarni yuklab olish huquqi yo'q", "У вас нет права выгружать данные"),
     "file_too_large": ("Fayl juda katta", "Файл слишком большой"),
     "file_type": ("Bu formatdagi faylni yuklab bo'lmaydi. Rasm tanlang (PNG, JPG, WEBP)", "Этот формат не поддерживается. Выберите изображение (PNG, JPG, WEBP)"),
@@ -49,6 +50,18 @@ MESSAGES = {
     "file_format": ("Bu formatdagi fayl qabul qilinmaydi", "Файл этого формата не принимается"),
     "too_many_files": ("Fayllar soni chegaradan oshdi", "Превышено количество файлов"),
     "invalid_video": ("Video havolasi noto'g'ri (https://... kerak)", "Неверная ссылка на видео (нужна https://...)"),
+    "edit_needs_named": (
+        "Javoblarni o'zgartirish faqat nomli so'rovnomalarda mumkin",
+        "Изменять ответы после отправки можно только в именных опросах",
+    ),
+    "time_over": ("Vaqt tugadi", "Время вышло"),
+    "question_time_over": ("Bu savol uchun vaqt tugadi", "Время на этот вопрос истекло"),
+    "attempts_used": ("Barcha urinishlardan foydalanildi", "Все попытки использованы"),
+    "attempts_locked": (
+        "Vaqt tugaganligi sababli qayta qatnashib bo'lmaydi",
+        "Повторное участие недоступно: время прошлой попытки истекло",
+    ),
+    "edit_not_allowed": ("Javoblarni o'zgartirib bo'lmaydi", "Изменить ответы нельзя"),
     "not_published": ("So'rovnoma hali e'lon qilinmagan", "Опрос ещё не опубликован"),
 }
 

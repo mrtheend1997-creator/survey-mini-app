@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
 from ..models import Answer, Response, StoredFile, Survey, SurveyVersion, User
-from ..services import audit
+from ..services import audit, timing
 from ..services.answers import readable
 from ..services.excel import build_workbook
 from ..services.results import region_names, survey_results
@@ -129,6 +129,7 @@ def dashboard(
 @router.get("/surveys/{survey_id}/results")
 def results(survey_id: int, version_id: int | None = None, user: User = Depends(staff), db: Session = Depends(get_db)):
     s = get_survey_for(db, user, survey_id, "results_view")
+    timing.expire_overdue(db, s)
     data = survey_results(db, s, version_id)
     data["versions"] = [
         {"id": v.id, "number": v.number, "created_at": v.created_at}
@@ -139,6 +140,7 @@ def results(survey_id: int, version_id: int | None = None, user: User = Depends(
 
 
 def _excel_response(db: Session, user: User, s: Survey, lang: str, version_id: int | None) -> HttpResponse:
+    timing.expire_overdue(db, s)
     content = build_workbook(db, s, lang, version_id)
     audit.log(db, user, "results.export", "survey", s.id, lang=lang)
     db.commit()
@@ -210,13 +212,14 @@ def export_by_link(token: str, db: Session = Depends(get_db)):
 @router.get("/surveys/{survey_id}/responses")
 def list_responses(
     survey_id: int,
-    status: str | None = Query(None, pattern="^(completed|in_progress)$"),
+    status: str | None = Query(None, pattern="^(completed|in_progress|timed_out)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user: User = Depends(staff),
     db: Session = Depends(get_db),
 ):
     s = get_survey_for(db, user, survey_id, "results_view")
+    timing.expire_overdue(db, s)
     q = select(Response).where(Response.survey_id == s.id)
     if status:
         q = q.where(Response.status == status)
@@ -232,6 +235,7 @@ def list_responses(
             {
                 "id": r.id,
                 "status": r.status,
+                "timed_out": r.timed_out,
                 "started_at": r.started_at,
                 "completed_at": r.completed_at,
                 "version_number": versions[r.version_id].number if r.version_id in versions else None,

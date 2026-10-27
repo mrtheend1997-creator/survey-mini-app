@@ -63,12 +63,28 @@ export default function Home() {
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
                     <span>❓ {t('questionsCount', { n: s.question_count })}</span>
                     <span>⏱️ {t('minutes', { n: s.estimated_minutes })}</span>
-                    <span>📅 {s.end_date ? t('until', { d: formatDate(s.end_date, lang) }) : t('noDeadline')}</span>
+                    <span>
+                      📅{' '}
+                      {s.closes_at
+                        ? t('until', { d: formatDate(s.closes_at, lang, true) })
+                        : s.end_date
+                          ? t('until', { d: formatDate(s.end_date, lang) })
+                          : t('noDeadline')}
+                    </span>
+                    {!!s.time_limit_minutes && <span>⏰ {t('timeLimitShort', { n: s.time_limit_minutes })}</span>}
+                    {!!s.attempts_limit && s.attempts_limit > 1 && <span>🔁 {t('attemptsOf', { used: s.attempts_used ?? 0, n: s.attempts_limit })}</span>}
                   </div>
-                  {s.completed && !s.allow_repeat ? (
-                    <div className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-center font-semibold text-brand-700 dark:bg-brand-700/20 dark:text-brand-100">
-                      {t('completedBadge')}
-                    </div>
+                  {!s.can_start && !draft ? (
+                    <>
+                      <div className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-center font-semibold text-brand-700 dark:bg-brand-700/20 dark:text-brand-100">
+                        {s.locked ? t('attemptsLocked') : s.completed ? t('completedBadge') : t('attemptsUsedUp')}
+                      </div>
+                      {s.can_edit && (
+                        <Button variant="outline" block className="mt-2" onClick={() => navigate(`/survey/${s.id}`)}>
+                          ✏️ {t('editAnswers')}
+                        </Button>
+                      )}
+                    </>
                   ) : (
                     <Button variant={draft ? 'success' : 'primary'} block className="mt-4" onClick={() => navigate(`/survey/${s.id}`)}>
                       {draft ? t('continue') : s.completed ? t('takeAgain') : t('start')} →

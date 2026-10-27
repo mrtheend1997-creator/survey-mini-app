@@ -47,6 +47,9 @@ export default function Preview() {
           status: s.effective_status,
           survey_type: s.survey_type,
           allow_repeat: s.allow_repeat,
+          closes_at: s.closes_at,
+          time_limit_minutes: s.time_limit_minutes,
+          timeout_policy: s.timeout_policy,
           completed: false,
           can_start: true,
         }}

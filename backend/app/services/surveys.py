@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..errors import ApiError
 from . import permissions as perms
-from ..models import Option, Question, Survey, SurveyManager, SurveyVersion, User
+from ..models import Option, Question, Survey, SurveyManager, SurveyVersion, User, utcnow
+from .timing import aware
 
 
 def today() -> date:
@@ -98,6 +99,7 @@ def question_snapshot(db: Session, q: Question) -> dict:
         "description_ru": q.description_ru,
         "video_url": q.video_url,
         "settings": q.settings or {},
+        "time_limit_seconds": q.time_limit_seconds,
         "options": [
             {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)
@@ -150,20 +152,27 @@ def estimated_minutes(survey: Survey, question_count: int) -> int:
     return max(1, math.ceil(question_count * 0.5))
 
 
+def _closed(survey: Survey) -> bool:
+    if survey.closes_at is not None:
+        return utcnow() > aware(survey.closes_at)
+    return bool(survey.end_date and survey.end_date < today())
+
+
+def _not_yet_open(survey: Survey) -> bool:
+    if survey.opens_at is not None:
+        return utcnow() < aware(survey.opens_at)
+    return bool(survey.start_date and survey.start_date > today())
+
+
 def is_open(survey: Survey) -> bool:
     if survey.deleted_at is not None or survey.status != "active":
         return False
     if survey.published_version_id is None:
         return False
-    t = today()
-    if survey.start_date and survey.start_date > t:
-        return False
-    if survey.end_date and survey.end_date < t:
-        return False
-    return True
+    return not _not_yet_open(survey) and not _closed(survey)
 
 
 def effective_status(survey: Survey) -> str:
-    if survey.status == "active" and survey.end_date and survey.end_date < today():
+    if survey.status == "active" and _closed(survey):
         return "finished"
     return survey.status
