@@ -35,6 +35,20 @@ MESSAGES = {
     "no_export_right": ("Sizda ma'lumotlarni yuklab olish huquqi yo'q", "У вас нет права выгружать данные"),
     "file_too_large": ("Fayl juda katta", "Файл слишком большой"),
     "file_type": ("Bu formatdagi faylni yuklab bo'lmaydi. Rasm tanlang (PNG, JPG, WEBP)", "Этот формат не поддерживается. Выберите изображение (PNG, JPG, WEBP)"),
+    "invalid_settings": ("Savol sozlamalari noto'g'ri", "Неверные настройки вопроса"),
+    "row_text_required": ("Jadvalning har bir qatori matnini ikkala tilda kiriting", "Заполните текст каждой строки таблицы на обоих языках"),
+    "contact_purpose_required": (
+        "Ma'lumotlar nima uchun so'ralayotganini ikkala tilda yozing",
+        "Укажите на обоих языках, для чего собираются контактные данные",
+    ),
+    "too_many_options": ("Juft taqqoslashda ko'pi bilan 6 ta variant bo'lishi mumkin", "В попарном сравнении можно не больше 6 вариантов"),
+    "personal_in_anonymous": (
+        "Anonim so'rovnomada kontakt ma'lumotlarini so'rab bo'lmaydi. So'rovnoma turini o'zgartiring yoki savolni o'chiring",
+        "В анонимном опросе нельзя запрашивать контактные данные. Измените тип опроса или удалите вопрос",
+    ),
+    "file_format": ("Bu formatdagi fayl qabul qilinmaydi", "Файл этого формата не принимается"),
+    "too_many_files": ("Fayllar soni chegaradan oshdi", "Превышено количество файлов"),
+    "invalid_video": ("Video havolasi noto'g'ri (https://... kerak)", "Неверная ссылка на видео (нужна https://...)"),
     "not_published": ("So'rovnoma hali e'lon qilinmagan", "Опрос ещё не опубликован"),
 }
 

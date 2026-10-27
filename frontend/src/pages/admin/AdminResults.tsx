@@ -7,6 +7,7 @@ import { Button, Card, ErrorBox, KpiCard, SectionTitle, Segmented, Select, Spinn
 import { useLoad } from '../../hooks'
 import { formatDate, pick } from '../../i18n'
 import { openDownload } from '../../telegram'
+import { QTYPE_ICON } from '../../qtypes'
 import type { QuestionResult, SurveyResults } from '../../types'
 
 export function useExcelDownload() {
@@ -34,12 +35,94 @@ function QuestionCard({ q, n }: { q: QuestionResult; n: number }) {
   return (
     <Card>
       <div className="text-xs font-semibold uppercase tracking-wide text-muted">
-        {n}. {t(`qt_${q.qtype}`)}
+        {n}. {QTYPE_ICON[q.qtype]} {t(`qt_${q.qtype}`)}
         {q.removed && <span className="ml-2 text-amber-600">· {t('removedQuestion')}</span>}
       </div>
       <div className="mt-1 text-[17px] font-bold leading-snug">{pick(q, 'text', lang)}</div>
-      <div className="mt-1 text-sm text-muted">{t('answeredCount', { n: q.answered })}</div>
+      {st.kind !== 'none' && <div className="mt-1 text-sm text-muted">{t('answeredCount', { n: q.answered })}</div>}
       <div className="mt-4">
+        {st.kind === 'rating' && st.nps && st.nps.score != null && (
+          <div className="mb-4 grid grid-cols-4 gap-2 text-center">
+            <div className="rounded-xl bg-navy-800 p-2.5 text-white dark:bg-navy-500">
+              <div className="text-xs opacity-80">NPS</div>
+              <div className="text-2xl font-bold">{st.nps.score}</div>
+            </div>
+            {(
+              [
+                ['npsPromoters', st.nps.promoters, 'text-brand-600'],
+                ['npsPassives', st.nps.passives, 'text-amber-600'],
+                ['npsDetractors', st.nps.detractors, 'text-red-600'],
+              ] as const
+            ).map(([k, v, cls]) => (
+              <div key={k} className="rounded-xl bg-navy-50 p-2.5 dark:bg-white/5">
+                <div className="text-xs text-muted">{t(k)}</div>
+                <div className={`text-lg font-bold ${cls}`}>{v}%</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {st.kind === 'matrix' && (
+          <div className="-mx-1 overflow-x-auto">
+            <table className="w-full min-w-[420px] border-separate border-spacing-1 text-sm">
+              <thead>
+                <tr>
+                  <th />
+                  {st.columns.map((c) => (
+                    <th key={c.option_id} className="px-1 py-1 text-center font-semibold text-muted">
+                      {pick(c, 'text', lang)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {st.rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="py-1 pr-2 font-medium">{pick(r, 'text', lang)}</td>
+                    {r.cells.map((c) => (
+                      <td
+                        key={c.option_id}
+                        className="rounded-lg px-1 py-2 text-center"
+                        style={{ background: `rgba(22,163,74,${0.08 + (c.percent / 100) * 0.6})` }}
+                        title={`${c.count}`}
+                      >
+                        <b>{c.percent}%</b>
+                        <div className="text-xs text-muted">{c.count}</div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {(st.kind === 'ranking' || st.kind === 'points') && (
+          <ol className="space-y-2">
+            {st.items.map((i, idx) => (
+              <li key={String(i.option_id)} className="flex items-center gap-3 rounded-xl bg-navy-50 px-3 py-2 dark:bg-white/5">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-navy-800 text-sm font-bold text-white dark:bg-navy-500">
+                  {idx + 1}
+                </span>
+                <span className="flex-1">{pick(i, 'text', lang)}</span>
+                <span className="shrink-0 text-right text-sm">
+                  {st.kind === 'points' ? (
+                    <>
+                      <b>{i.average ?? 0}</b> <span className="text-muted">{t('pointsAvg')}</span>
+                    </>
+                  ) : st.pairwise ? (
+                    <>
+                      <b>{i.percent}%</b> <span className="text-muted">{t('pairWins')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <b>{i.average ?? '—'}</b> <span className="text-muted">{t('avgPlace')}</span>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {st.kind === 'none' && <div className="text-muted">{t('infoNoStats')}</div>}
         {(st.kind === 'choice' || st.kind === 'rating') && (
           <>
             {st.kind === 'rating' && st.average != null && (
@@ -70,6 +153,16 @@ function QuestionCard({ q, n }: { q: QuestionResult; n: number }) {
               />
             ) : (
               <PieChartView data={st.items.map((i) => ({ label: pick(i, 'text', lang), value: i.count }))} />
+            )}
+            {st.kind === 'choice' && !!st.districts?.length && (
+              <details className="mt-4">
+                <summary className="cursor-pointer font-semibold">
+                  {t('byDistrict')} ({st.districts.length})
+                </summary>
+                <div className="mt-3">
+                  <PercentBars items={st.districts.map((i) => ({ label: pick(i, 'text', lang), count: i.count, percent: i.percent }))} />
+                </div>
+              </details>
             )}
             {st.kind === 'choice' && !!st.other_texts?.length && (
               <details className="mt-4">

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..models import Answer, Response, Survey, SurveyVersion, User
 from .answers import readable
-from .results import merged_questions, survey_results
+from .results import merged_questions, region_names, survey_results
 
 L = {
     "uz": {
@@ -38,6 +38,9 @@ L = {
         "st_completed": "Yakunlangan",
         "st_in_progress": "Jarayonda",
         "anonymous": "Anonim",
+        "row": "Qator",
+        "avg_place": "O'rtacha o'rin",
+        "nps": "NPS indeksi",
     },
     "ru": {
         "summary": "Сводка",
@@ -62,6 +65,9 @@ L = {
         "st_completed": "Завершена",
         "st_in_progress": "В процессе",
         "anonymous": "Анонимно",
+        "row": "Строка",
+        "avg_place": "Среднее место",
+        "nps": "Индекс NPS",
     },
 }
 
@@ -105,6 +111,25 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     for idx, q in enumerate(res["questions"], 1):
         qtext = f"{idx}. {q.get(f'text_{lang}') or q['text_uz']}"
         stats = q["stats"]
+        if stats["kind"] == "none":
+            continue
+        if stats["kind"] == "matrix":
+            for row in stats["rows"]:
+                rtext = row.get(f"text_{lang}") or row["text_uz"]
+                for col, cell in zip(stats["columns"], row["cells"]):
+                    ctext = col.get(f"text_{lang}") or col["text_uz"]
+                    ws.append([qtext, f"{rtext} — {ctext}", cell["count"], cell["percent"] / 100])
+                    ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
+                    qtext = ""
+            continue
+        if stats["kind"] in ("ranking", "points"):
+            for item in stats["items"]:
+                extra = item.get("average") if stats["kind"] == "ranking" and not stats.get("pairwise") else item["percent"] / 100
+                ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], extra])
+                if stats["kind"] != "ranking" or stats.get("pairwise"):
+                    ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
+                qtext = ""
+            continue
         if stats["kind"] in ("choice", "rating"):
             for item in stats["items"]:
                 ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], item["percent"] / 100])
@@ -112,6 +137,8 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
                 qtext = ""
             if stats.get("average") is not None:
                 ws.append(["", t["average"], stats["average"], None])
+            if stats.get("nps") and stats["nps"]["score"] is not None:
+                ws.append(["", t["nps"], stats["nps"]["score"], None])
         elif stats["kind"] == "number":
             ws.append([qtext, t["average"], stats["average"], None])
         else:
@@ -127,7 +154,9 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     head = [t["no"], t["status"], t["started"], t["finished"], t["version"]]
     if not anonymous:
         head += [t["respondent"], "Telegram", t["phone"]]
+    questions = [q for q in questions if q["qtype"] != "info"]
     head += [f"{i}. {q.get(f'text_{lang}') or q['text_uz']}" for i, q in enumerate(questions, 1)]
+    regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
     _header(ws2, 1, head)
 
     rq = select(Response).where(Response.survey_id == survey.id)
@@ -162,7 +191,7 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
                 info.get("phone", ""),
             ]
         ra = answers.get(resp.id, {})
-        row += [readable(q, ra.get(q["id"]), lang) for q in questions]
+        row += [readable(q, ra.get(q["id"]), lang, regions) for q in questions]
         ws2.append(row)
     for col in range(1, len(head) + 1):
         ws2.column_dimensions[get_column_letter(col)].width = 18 if col <= 8 else 32

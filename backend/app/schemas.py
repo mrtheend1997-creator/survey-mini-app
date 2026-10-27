@@ -8,7 +8,9 @@ Role = Literal["super_admin", "admin", "analyst", "user"]
 SurveyType = Literal["anonymous", "named", "registered"]
 SurveyStatus = Literal["draft", "active", "paused", "finished"]
 QuestionType = Literal[
-    "single", "multiple", "text", "number", "yes_no", "rating5", "rating10", "dropdown", "date"
+    "single", "multiple", "dropdown", "image_choice", "short_text", "text", "scale", "stars", "nps",
+    "yes_no", "date", "time", "number", "matrix", "matrix_multi", "ranking", "points", "pairwise",
+    "file", "video", "contact", "region", "info", "rating5", "rating10",
 ]
 
 
@@ -76,6 +78,7 @@ class OptionIn(BaseModel):
     id: int | None = None
     text_uz: str = Field(default="", max_length=1000)
     text_ru: str = Field(default="", max_length=1000)
+    image_url: str = Field(default="", max_length=1000)
 
 
 class QuestionIn(BaseModel):
@@ -89,8 +92,24 @@ class QuestionIn(BaseModel):
     min_choices: int | None = Field(default=None, ge=0, le=1000)
     max_choices: int | None = Field(default=None, ge=1, le=1000)
     allow_other: bool = False
+    description_uz: str = Field(default="", max_length=5000)
+    description_ru: str = Field(default="", max_length=5000)
+    video_url: str = Field(default="", max_length=1000)
+    hidden: bool = False
+    settings: dict | None = None
     options: list[OptionIn] = Field(default_factory=list, max_length=200)
     position: int | None = None
+
+
+class RegionIn(BaseModel):
+    name_uz: str = Field(min_length=1, max_length=255)
+    name_ru: str = Field(min_length=1, max_length=255)
+    parent_id: int | None = None
+
+
+class RegionPatch(BaseModel):
+    name_uz: str | None = Field(default=None, min_length=1, max_length=255)
+    name_ru: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class ReorderIn(BaseModel):

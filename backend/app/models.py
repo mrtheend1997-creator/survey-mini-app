@@ -37,18 +37,7 @@ def utcnow() -> datetime:
 ROLES = ("super_admin", "admin", "analyst", "user")
 SURVEY_TYPES = ("anonymous", "named", "registered")
 SURVEY_STATUSES = ("draft", "active", "paused", "finished")
-QUESTION_TYPES = (
-    "single",
-    "multiple",
-    "text",
-    "number",
-    "yes_no",
-    "rating5",
-    "rating10",
-    "dropdown",
-    "date",
-)
-CHOICE_TYPES = ("single", "multiple", "dropdown")
+# question types and their settings: services/qtypes.py
 
 
 class User(Base):
@@ -156,6 +145,13 @@ class Question(Base):
     min_choices: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_choices: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allow_other: Mapped[bool] = mapped_column(Boolean, default=False)
+    description_uz: Mapped[str] = mapped_column(Text, default="", server_default="")
+    description_ru: Mapped[str] = mapped_column(Text, default="", server_default="")
+    video_url: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    # hidden questions stay in the builder but are left out when the survey is published
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # type-specific settings (scale range, matrix rows, file formats...), see services/qtypes.py
+    settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -171,6 +167,23 @@ class Option(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     text_uz: Mapped[str] = mapped_column(Text, default="")
     text_ru: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Region(Base):
+    """Regions and their districts (parent_id points to the region). Edited by the Super Admin.
+
+    Rows are never hard-deleted, so answers that point to them stay readable.
+    """
+
+    __tablename__ = "regions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("regions.id"), nullable=True, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    name_uz: Mapped[str] = mapped_column(String(255), default="")
+    name_ru: Mapped[str] = mapped_column(String(255), default="")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -266,7 +279,7 @@ class AppSetting(Base):
 
 
 class StoredFile(Base):
-    """Images kept in PostgreSQL (logo, question pictures).
+    """Files kept in PostgreSQL (logo, question pictures, files attached to answers).
 
     Stored in the database rather than on disk so they survive restarts and redeploys on
     hosts without a persistent disk (e.g. Render) and are included in database backups.
@@ -275,7 +288,9 @@ class StoredFile(Base):
     __tablename__ = "stored_files"
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
-    content_type: Mapped[str] = mapped_column(String(64))
+    content_type: Mapped[str] = mapped_column(String(255))
+    # original file name, for files respondents attach to their answers
+    name: Mapped[str] = mapped_column(String(255), default="", server_default="")
     size: Mapped[int] = mapped_column(Integer)
     content: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

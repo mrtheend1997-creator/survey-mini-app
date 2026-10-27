@@ -6,6 +6,7 @@ import { Button, Card, ConfirmDialog, Empty, ErrorBox, Spinner, StatusBadge } fr
 import { useLoad } from '../../hooks'
 import { pick } from '../../i18n'
 import { can } from '../../permissions'
+import { QTYPE_ICON } from '../../qtypes'
 import type { AdminSurvey, QuestionT } from '../../types'
 import QuestionEditor, { IconBtn } from './QuestionEditor'
 
@@ -109,11 +110,12 @@ export default function QuestionBuilder() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted">
-                  {t(`qt_${q.qtype}`)}
+                  {QTYPE_ICON[q.qtype]} {t(`qt_${q.qtype}`)}
                   {q.required && <span className="ml-2 text-red-600">● {t('required')}</span>}
+                  {q.hidden && <span className="ml-2 text-amber-600">🙈 {t('hiddenBadge')}</span>}
                 </div>
                 <div className="mt-0.5 font-semibold leading-snug">{pick(q, 'text', lang)}</div>
-                {q.options.length > 0 && (
+                {q.options.length > 0 && !q.settings?.rows?.length && (
                   <ul className="mt-2 space-y-0.5 text-[15px] text-muted">
                     {q.options.slice(0, 6).map((o) => (
                       <li key={o.id}>○ {pick(o, 'text', lang)}</li>
@@ -122,7 +124,17 @@ export default function QuestionBuilder() {
                     {q.allow_other && <li>○ {t('other')}…</li>}
                   </ul>
                 )}
-                {q.image_url && <div className="mt-1 text-sm text-muted">🖼️ {t('image')}</div>}
+                {!!q.settings?.rows?.length && (
+                  <div className="mt-1 text-sm text-muted">
+                    ▤ {q.settings.rows.length} {t('matrixRowsShort')} × {q.options.length} {t('matrixColumnsShort')}
+                  </div>
+                )}
+                {(q.image_url || q.video_url) && (
+                  <div className="mt-1 text-sm text-muted">
+                    {q.image_url && `🖼️ ${t('image')} `}
+                    {q.video_url && `🎬 ${t('video')}`}
+                  </div>
+                )}
               </div>
             </div>
             {canQuestions && (
@@ -145,6 +157,7 @@ export default function QuestionBuilder() {
       <QuestionEditor
         open={editorOpen}
         surveyId={s.id}
+        surveyType={s.survey_type}
         question={editing}
         permissions={s.permissions}
         onClose={() => setEditorOpen(false)}

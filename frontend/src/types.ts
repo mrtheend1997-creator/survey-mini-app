@@ -1,5 +1,30 @@
 export type Role = 'super_admin' | 'admin' | 'analyst' | 'user'
-export type QType = 'single' | 'multiple' | 'text' | 'number' | 'yes_no' | 'rating5' | 'rating10' | 'dropdown' | 'date'
+export type QType =
+  | 'single'
+  | 'multiple'
+  | 'dropdown'
+  | 'image_choice'
+  | 'short_text'
+  | 'text'
+  | 'scale'
+  | 'stars'
+  | 'nps'
+  | 'yes_no'
+  | 'date'
+  | 'time'
+  | 'number'
+  | 'matrix'
+  | 'matrix_multi'
+  | 'ranking'
+  | 'points'
+  | 'pairwise'
+  | 'file'
+  | 'video'
+  | 'contact'
+  | 'region'
+  | 'info'
+  | 'rating5'
+  | 'rating10'
 export type SurveyStatus = 'draft' | 'active' | 'paused' | 'finished'
 export type SurveyType = 'anonymous' | 'named' | 'registered'
 
@@ -21,7 +46,51 @@ export interface OptionT {
   id?: number
   text_uz: string
   text_ru: string
+  image_url?: string
   removed?: boolean
+}
+
+export interface MatrixRow {
+  id?: string
+  text_uz: string
+  text_ru: string
+}
+
+export type ContactField = 'full_name' | 'phone' | 'email' | 'organization' | 'position'
+
+/** Type-specific question settings; which keys are used depends on the question type. */
+export interface QSettings {
+  min_len?: number | null
+  max_len?: number | null
+  format?: 'any' | 'email' | 'phone' | 'digits' | 'letters' | 'url'
+  min?: number | null
+  max?: number | null
+  step?: number
+  label_min_uz?: string
+  label_min_ru?: string
+  label_max_uz?: string
+  label_max_ru?: string
+  count?: number
+  unsure?: boolean
+  min_date?: string | null
+  max_date?: string | null
+  no_past?: boolean
+  no_future?: boolean
+  min_time?: string | null
+  max_time?: string | null
+  integer?: boolean
+  unit_uz?: string
+  unit_ru?: string
+  rows?: MatrixRow[]
+  multiple?: boolean
+  total?: number
+  formats?: string[]
+  max_mb?: number
+  max_files?: number
+  fields?: Partial<Record<ContactField, boolean>>
+  purpose_uz?: string
+  purpose_ru?: string
+  district?: boolean
 }
 
 export interface QuestionT {
@@ -36,8 +105,26 @@ export interface QuestionT {
   min_choices: number | null
   max_choices: number | null
   allow_other: boolean
+  description_uz?: string
+  description_ru?: string
+  video_url?: string
+  hidden?: boolean
+  settings?: QSettings
   options: (OptionT & { id: number })[]
   position?: number
+}
+
+export interface UploadedFile {
+  key: string
+  name: string
+  size: number
+}
+
+export interface RegionT {
+  id: number
+  name_uz: string
+  name_ru: string
+  districts: { id: number; name_uz: string; name_ru: string }[]
 }
 
 export type AnswerValue = {
@@ -49,6 +136,16 @@ export type AnswerValue = {
   bool?: boolean
   rating?: number
   date?: string
+  unsure?: boolean
+  time?: string
+  matrix?: Record<string, number | number[]>
+  order?: number[]
+  points?: Record<string, number>
+  pairs?: Record<string, number>
+  files?: UploadedFile[]
+  contact?: Partial<Record<ContactField, string>>
+  region?: number
+  district?: number | null
 }
 
 export interface SurveyCard {
@@ -120,16 +217,31 @@ export interface StatItem {
   count: number
   percent: number
   removed?: boolean
+  image_url?: string
+  average?: number | null
 }
 
 export interface QuestionResult extends QuestionT {
   removed: boolean
   answered: number
   stats:
-    | { kind: 'choice'; items: StatItem[]; other_texts?: string[] }
-    | { kind: 'rating'; items: StatItem[]; average: number | null }
+    | { kind: 'choice'; items: StatItem[]; other_texts?: string[]; districts?: StatItem[] }
+    | {
+        kind: 'rating'
+        items: StatItem[]
+        average: number | null
+        nps?: { score: number | null; promoters: number; passives: number; detractors: number }
+      }
     | { kind: 'number'; average: number | null; min: number | null; max: number | null }
     | { kind: 'list'; values: string[] }
+    | {
+        kind: 'matrix'
+        columns: { option_id: number; text_uz: string; text_ru: string }[]
+        rows: { id: string; text_uz: string; text_ru: string; answered: number; cells: { option_id: number; count: number; percent: number }[] }[]
+      }
+    | { kind: 'ranking'; items: StatItem[]; pairwise?: boolean }
+    | { kind: 'points'; items: StatItem[]; total: number }
+    | { kind: 'none' }
 }
 
 export interface SurveyResults {

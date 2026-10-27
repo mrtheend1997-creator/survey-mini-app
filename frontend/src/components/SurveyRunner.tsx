@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useApp } from '../app-context'
-import { formatDate, pick, type Lang } from '../i18n'
+import { formatDate, pick } from '../i18n'
+import { isAnswered, isMulti, problem, ratingValues } from '../qtypes'
 import { haptic, telegramUserId } from '../telegram'
 import type { AnswerValue, QuestionT, ResponseState, SurveyCard } from '../types'
-import { Button, Input, Label, ProgressBar, TextArea } from './ui'
+import QuestionInput, { QuestionMedia } from './QuestionInputs'
+import { Button, Input, Label, ProgressBar } from './ui'
 
 type Mode = 'live' | 'preview'
 type Phase = 'intro' | 'questions' | 'done'
 
 // Question types that jump to the next question right after a choice is made.
-const AUTO_ADVANCE = new Set(['single', 'dropdown', 'yes_no', 'rating5', 'rating10'])
-const DEBOUNCED = new Set(['text', 'number'])
+const AUTO_ADVANCE = new Set(['single', 'dropdown', 'yes_no', 'rating5', 'rating10', 'scale', 'stars', 'nps', 'image_choice', 'region'])
+// typed answers are sent after a short pause instead of on every key press
+const DEBOUNCED = new Set(['text', 'short_text', 'video', 'number', 'contact', 'points'])
+
+function autoAdvance(q: QuestionT): boolean {
+  if (!AUTO_ADVANCE.has(q.qtype)) return false
+  if (q.qtype === 'image_choice') return !isMulti(q)
+  if (q.qtype === 'scale') return ratingValues(q).length <= 11
+  return true
+}
 
 const tokenKey = (surveyId: number) => `fti_resp_${telegramUserId()}_${surveyId}`
 const backupKey = (token: string) => `fti_ans_${token}`
@@ -30,32 +40,6 @@ function safeSet(key: string, value: string | null) {
   } catch {
     /* storage unavailable */
   }
-}
-
-export function isAnswered(q: QuestionT, v: AnswerValue | undefined): boolean {
-  if (!v) return false
-  switch (q.qtype) {
-    case 'single':
-    case 'dropdown':
-      return v.option_id != null || !!v.other?.trim()
-    case 'multiple':
-      return (v.option_ids?.length ?? 0) > 0 || !!v.other?.trim()
-    case 'text':
-      return !!v.text?.trim()
-    case 'number':
-      return typeof v.number === 'number' && isFinite(v.number)
-    case 'yes_no':
-      return typeof v.bool === 'boolean'
-    case 'rating5':
-    case 'rating10':
-      return typeof v.rating === 'number'
-    case 'date':
-      return !!v.date
-  }
-}
-
-function choiceCount(v: AnswerValue | undefined): number {
-  return (v?.option_ids?.length ?? 0) + (v?.other != null ? 1 : 0)
 }
 
 export default function SurveyRunner({
@@ -188,11 +172,33 @@ export default function SurveyRunner({
     if (mode === 'live' && token) api.patch(`/api/responses/${token}`, { current_index: i }).catch(() => undefined)
   }
 
+  const reasonText = (question: QuestionT, reason: string): string => {
+    const st = question.settings ?? {}
+    switch (reason) {
+      case 'required':
+        return t('requiredError')
+      case 'min_choices':
+        return t('minChoicesError', { n: question.min_choices ?? 0 })
+      case 'min_len':
+        return t('minLenError', { n: st.min_len ?? 0 })
+      case 'format':
+        return t('formatError')
+      case 'integer':
+        return t('integerError')
+      case 'range':
+        return t('rangeError', { a: st.min ?? '−∞', b: st.max ?? '∞' })
+      case 'points_sum':
+        return t('pointsSumError', { n: st.total ?? 100 })
+      case 'incomplete':
+        return t('incompleteError')
+      default:
+        return t('requiredError')
+    }
+  }
+
   const validate = (question: QuestionT, v: AnswerValue | undefined): string | null => {
-    if (question.required && !isAnswered(question, v)) return t('requiredError')
-    if (question.qtype === 'multiple' && question.min_choices && isAnswered(question, v) && choiceCount(v) < question.min_choices)
-      return t('minChoicesError', { n: question.min_choices })
-    return null
+    const reason = problem(question, v)
+    return reason ? reasonText(question, reason) : null
   }
 
   const next = () => {
@@ -228,7 +234,7 @@ export default function SurveyRunner({
         sendAnswer(qid, value, index).catch(() => undefined)
       }
     }
-    if (opts.advance && AUTO_ADVANCE.has(question.qtype) && !isLast) {
+    if (opts.advance && autoAdvance(question) && !isLast) {
       clearTimeout(advanceTimer.current)
       advanceTimer.current = setTimeout(() => goTo(index + 1), 380)
     }
@@ -262,9 +268,10 @@ export default function SurveyRunner({
       haptic.success()
     } catch (e) {
       if (e instanceof ApiError && e.code === 'required_missing') {
-        const missing = (e.extra.missing as { index: number }[] | undefined)?.[0]
+        const missing = (e.extra.missing as { index: number; reason?: string }[] | undefined)?.[0]
         if (missing) goTo(missing.index)
-        setTimeout(() => setError(t('requiredError')), 0)
+        const mq = missing ? questions[missing.index] : undefined
+        setTimeout(() => setError(mq ? reasonText(mq, missing?.reason ?? 'required') : t('requiredError')), 0)
         haptic.error()
       } else if (e instanceof ApiError && e.code === 'response_completed') {
         safeSet(tokenKey(surveyId), null)
@@ -365,7 +372,7 @@ export default function SurveyRunner({
 
   if (!q) return null
   const value = answers[String(q.id)]
-  const progress = total ? ((index + (isAnswered(q, value) ? 1 : 0)) / total) * 100 : 0
+  const progress = total ? ((index + (isAnswered(q, value) || q.qtype === 'info' ? 1 : 0)) / total) * 100 : 0
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -400,10 +407,11 @@ export default function SurveyRunner({
             </span>
           )}
         </h2>
+        {pick(q, 'description', lang) && <p className="mt-3 whitespace-pre-line text-base leading-relaxed">{pick(q, 'description', lang)}</p>}
         {pick(q, 'hint', lang) && <p className="mt-2 text-[15px] leading-relaxed text-muted">{pick(q, 'hint', lang)}</p>}
-        {q.image_url && <img src={q.image_url} alt="" className="mt-4 max-h-72 w-full rounded-2xl object-contain" />}
+        <QuestionMedia q={q} />
         <div className="mt-5">
-          <QuestionInput q={q} value={value} lang={lang} onChange={(v, adv) => setAnswer(q, v, { advance: adv })} />
+          <QuestionInput q={q} value={value} lang={lang} token={token} preview={mode === 'preview'} onChange={(v, adv) => setAnswer(q, v, { advance: adv })} />
         </div>
         {error && (
           <div role="alert" className="animate-pop mt-4 rounded-xl bg-red-50 p-3 text-[15px] font-medium text-red-700 dark:bg-red-950/40 dark:text-red-200">
@@ -431,225 +439,4 @@ export default function SurveyRunner({
       </div>
     </div>
   )
-}
-
-// ------------------------------------------------------------------ inputs
-
-function OptionButton({ selected, multi, children, onClick }: { selected: boolean; multi?: boolean; children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
-      className={`flex min-h-[56px] w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left text-base transition active:scale-[0.99] ${
-        selected ? 'animate-pop border-brand-500 bg-brand-50 font-semibold dark:bg-brand-700/20' : 'border-line bg-card'
-      }`}
-    >
-      <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center border-2 text-sm text-white transition ${multi ? 'rounded-md' : 'rounded-full'} ${
-          selected ? 'border-brand-500 bg-brand-500' : 'border-gray-300 dark:border-gray-500'
-        }`}
-      >
-        {selected && '✓'}
-      </span>
-      <span className="flex-1">{children}</span>
-    </button>
-  )
-}
-
-function QuestionInput({
-  q,
-  value,
-  lang,
-  onChange,
-}: {
-  q: QuestionT
-  value: AnswerValue | undefined
-  lang: Lang
-  onChange: (v: AnswerValue | null, advance?: boolean) => void
-}) {
-  const { t } = useApp()
-  const [numText, setNumText] = useState(value?.number != null ? String(value.number) : '')
-  useEffect(() => setNumText(value?.number != null ? String(value.number) : ''), [q.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  switch (q.qtype) {
-    case 'single': {
-      const otherOn = value?.other != null
-      return (
-        <div className="space-y-2.5">
-          {q.options.map((o) => (
-            <OptionButton key={o.id} selected={value?.option_id === o.id} onClick={() => onChange({ option_id: o.id }, true)}>
-              {pick(o, 'text', lang)}
-            </OptionButton>
-          ))}
-          {q.allow_other && (
-            <>
-              <OptionButton selected={otherOn} onClick={() => onChange({ other: value?.other ?? '' })}>
-                {t('other')}
-              </OptionButton>
-              {otherOn && (
-                <Input autoFocus value={value?.other ?? ''} placeholder={t('otherPlaceholder')} onChange={(e) => onChange({ other: e.target.value })} />
-              )}
-            </>
-          )}
-        </div>
-      )
-    }
-    case 'multiple': {
-      const ids = value?.option_ids ?? []
-      const otherOn = value?.other != null
-      const max = q.max_choices ?? Infinity
-      const count = ids.length + (otherOn ? 1 : 0)
-      const toggle = (id: number) => {
-        const nextIds = ids.includes(id) ? ids.filter((x) => x !== id) : count >= max ? ids : [...ids, id]
-        if (!nextIds.length && !otherOn) onChange(null)
-        else onChange({ option_ids: nextIds, other: value?.other ?? null })
-      }
-      return (
-        <div className="space-y-2.5">
-          <p className="text-sm text-muted">
-            {t('chooseMany')}
-            {q.max_choices ? ` · ${t('maxChoicesHint', { n: q.max_choices })}` : ''}
-          </p>
-          {q.options.map((o) => (
-            <OptionButton key={o.id} multi selected={ids.includes(o.id)} onClick={() => toggle(o.id)}>
-              {pick(o, 'text', lang)}
-            </OptionButton>
-          ))}
-          {q.allow_other && (
-            <>
-              <OptionButton
-                multi
-                selected={otherOn}
-                onClick={() => {
-                  if (otherOn) onChange(ids.length ? { option_ids: ids, other: null } : null)
-                  else if (count < max) onChange({ option_ids: ids, other: '' })
-                }}
-              >
-                {t('other')}
-              </OptionButton>
-              {otherOn && (
-                <Input
-                  autoFocus
-                  value={value?.other ?? ''}
-                  placeholder={t('otherPlaceholder')}
-                  onChange={(e) => onChange({ option_ids: ids, other: e.target.value })}
-                />
-              )}
-            </>
-          )}
-        </div>
-      )
-    }
-    case 'dropdown': {
-      const otherOn = value?.other != null
-      const current = otherOn ? 'other' : value?.option_id != null ? String(value.option_id) : ''
-      return (
-        <div className="space-y-2.5">
-          <select
-            value={current}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v === '') onChange(null)
-              else if (v === 'other') onChange({ other: '' })
-              else onChange({ option_id: Number(v) }, true)
-            }}
-            className="min-h-[56px] w-full rounded-2xl border-2 border-line bg-card px-4 text-base text-ink outline-none focus:border-navy-500"
-          >
-            <option value="">{t('selectPlaceholder')}</option>
-            {q.options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {pick(o, 'text', lang)}
-              </option>
-            ))}
-            {q.allow_other && <option value="other">{t('other')}</option>}
-          </select>
-          {otherOn && <Input autoFocus value={value?.other ?? ''} placeholder={t('otherPlaceholder')} onChange={(e) => onChange({ other: e.target.value })} />}
-        </div>
-      )
-    }
-    case 'text':
-      return (
-        <TextArea
-          rows={5}
-          value={value?.text ?? ''}
-          placeholder={t('yourAnswer')}
-          maxLength={5000}
-          onChange={(e) => onChange(e.target.value ? { text: e.target.value } : null)}
-        />
-      )
-    case 'number':
-      return (
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={numText}
-          placeholder={t('numberPlaceholder')}
-          onChange={(e) => {
-            const raw = e.target.value.replace(',', '.')
-            if (!/^-?\d*\.?\d*$/.test(raw)) return
-            setNumText(raw)
-            const n = parseFloat(raw)
-            onChange(raw === '' || isNaN(n) ? null : { number: n })
-          }}
-        />
-      )
-    case 'yes_no':
-      return (
-        <div className="grid grid-cols-2 gap-3">
-          {[true, false].map((b) => (
-            <button
-              key={String(b)}
-              type="button"
-              onClick={() => onChange({ bool: b }, true)}
-              aria-pressed={value?.bool === b}
-              className={`flex min-h-[72px] flex-col items-center justify-center rounded-2xl border-2 text-lg font-semibold transition active:scale-[0.98] ${
-                value?.bool === b ? 'animate-pop border-brand-500 bg-brand-50 dark:bg-brand-700/20' : 'border-line bg-card'
-              }`}
-            >
-              <span className="text-2xl">{b ? '👍' : '👎'}</span>
-              {b ? t('yes') : t('no')}
-            </button>
-          ))}
-        </div>
-      )
-    case 'rating5':
-    case 'rating10': {
-      const top = q.qtype === 'rating5' ? 5 : 10
-      return (
-        <div>
-          <div className={`grid gap-2 ${top === 5 ? 'grid-cols-5' : 'grid-cols-5'}`}>
-            {Array.from({ length: top }, (_, i) => i + 1).map((n) => {
-              const selected = value?.rating === n
-              const filled = top === 5 && (value?.rating ?? 0) >= n
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => onChange({ rating: n }, true)}
-                  aria-pressed={selected}
-                  className={`flex aspect-square flex-col items-center justify-center rounded-2xl border-2 text-lg font-bold transition active:scale-95 ${
-                    selected
-                      ? 'animate-pop border-brand-500 bg-brand-500 text-white'
-                      : filled
-                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-700/20'
-                        : 'border-line bg-card'
-                  }`}
-                >
-                  {top === 5 && <span className="text-xl leading-none">{filled ? '★' : '☆'}</span>}
-                  <span>{n}</span>
-                </button>
-              )
-            })}
-          </div>
-          <div className="mt-2 flex justify-between text-xs text-muted">
-            <span>1</span>
-            <span>{top}</span>
-          </div>
-        </div>
-      )
-    }
-    case 'date':
-      return <Input type="date" value={value?.date ?? ''} onChange={(e) => onChange(e.target.value ? { date: e.target.value } : null)} />
-  }
 }
