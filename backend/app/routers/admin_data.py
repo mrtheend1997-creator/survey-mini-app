@@ -21,7 +21,8 @@ from ..services import audit
 from ..services.answers import readable
 from ..services.excel import build_workbook
 from ..services.results import survey_results
-from ..services.surveys import can_export, effective_status, get_viewable_survey, viewable_surveys_query
+from ..services import permissions as perms
+from ..services.surveys import effective_status, get_survey_for, viewable_surveys_query
 
 router = APIRouter(prefix="/api/admin", tags=["admin-data"])
 staff = require_role("analyst")
@@ -43,7 +44,8 @@ def dashboard(
     user: User = Depends(staff),
     db: Session = Depends(get_db),
 ):
-    surveys = list(db.scalars(viewable_surveys_query(db, user)))
+    # only the surveys whose results this person may see
+    surveys = [s for s in db.scalars(viewable_surveys_query(db, user)) if "results_view" in perms.survey_permissions(db, user, s)]
     ids = [s.id for s in surveys]
     if survey_id:
         if survey_id not in ids:
@@ -126,7 +128,7 @@ def dashboard(
 
 @router.get("/surveys/{survey_id}/results")
 def results(survey_id: int, version_id: int | None = None, user: User = Depends(staff), db: Session = Depends(get_db)):
-    s = get_viewable_survey(db, user, survey_id)
+    s = get_survey_for(db, user, survey_id, "results_view")
     data = survey_results(db, s, version_id)
     data["versions"] = [
         {"id": v.id, "number": v.number, "created_at": v.created_at}
@@ -157,9 +159,7 @@ def export_excel(
     user: User = Depends(staff),
     db: Session = Depends(get_db),
 ):
-    s = get_viewable_survey(db, user, survey_id)
-    if not can_export(user):
-        raise ApiError(403, "no_export_right")
+    s = get_survey_for(db, user, survey_id, "export")
     return _excel_response(db, user, s, lang, version_id)
 
 
@@ -181,9 +181,7 @@ def export_link(
     user: User = Depends(staff),
     db: Session = Depends(get_db),
 ):
-    s = get_viewable_survey(db, user, survey_id)
-    if not can_export(user):
-        raise ApiError(403, "no_export_right")
+    s = get_survey_for(db, user, survey_id, "export")
     payload = f"{s.id}.{lang}.{version_id or 0}.{user.id}.{int(_time.time()) + LINK_TTL}"
     stamp = datetime.now(_tz()).strftime("%Y%m%d-%H%M")
     return {
@@ -203,9 +201,9 @@ def export_by_link(token: str, db: Session = Depends(get_db)):
     if not ok:
         raise ApiError(403, "forbidden")
     user = db.get(User, int(uid))
-    if user is None or user.is_blocked or not can_export(user):
+    if user is None or user.is_blocked:
         raise ApiError(403, "forbidden")
-    s = get_viewable_survey(db, user, int(sid))
+    s = get_survey_for(db, user, int(sid), "export")
     return _excel_response(db, user, s, lang, int(vid) or None)
 
 
@@ -218,7 +216,7 @@ def list_responses(
     user: User = Depends(staff),
     db: Session = Depends(get_db),
 ):
-    s = get_viewable_survey(db, user, survey_id)
+    s = get_survey_for(db, user, survey_id, "results_view")
     q = select(Response).where(Response.survey_id == s.id)
     if status:
         q = q.where(Response.status == status)
@@ -256,7 +254,7 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
     r = db.get(Response, response_id)
     if r is None:
         raise ApiError(404, "not_found")
-    s: Survey = get_viewable_survey(db, user, r.survey_id)
+    s: Survey = get_survey_for(db, user, r.survey_id, "results_view")
     version = db.get(SurveyVersion, r.version_id)
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == r.id))}
     anonymous = s.survey_type == "anonymous"

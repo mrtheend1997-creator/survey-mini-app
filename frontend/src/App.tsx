@@ -59,7 +59,6 @@ export default function App() {
   }
 
   const staff = me.can_admin
-  const manager = me.role === 'admin' || me.role === 'super_admin'
   const superAdmin = me.role === 'super_admin'
 
   return (
@@ -72,7 +71,7 @@ export default function App() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminHome />} />
             <Route path="surveys" element={<AdminSurveys />} />
-            {manager && <Route path="surveys/new" element={<SurveyForm />} />}
+            {me.permissions.includes('survey_create') && <Route path="surveys/new" element={<SurveyForm />} />}
             <Route path="surveys/:id" element={<SurveyForm />} />
             <Route path="surveys/:id/questions" element={<QuestionBuilder />} />
             <Route path="surveys/:id/preview" element={<Preview />} />

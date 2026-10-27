@@ -52,12 +52,14 @@ export default function QuestionEditor({
   open,
   surveyId,
   question,
+  permissions,
   onClose,
   onSaved,
 }: {
   open: boolean
   surveyId: number
   question: QuestionT | null
+  permissions: string[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -91,6 +93,10 @@ export default function QuestionEditor({
   }
 
   const isChoice = CHOICE.includes(d.qtype)
+  // a new question is built freely; changing an existing one needs the matching permission
+  const canType = !question || permissions.includes('question_type')
+  const canOptions = !question || permissions.includes('option_manage')
+  const canMedia = permissions.includes('media_manage')
 
   const upload = async (file: File) => {
     setUploading(true)
@@ -171,7 +177,7 @@ export default function QuestionEditor({
         </div>
         <div>
           <Label>{t('questionType')}</Label>
-          <Select value={d.qtype} onChange={(e) => set('qtype', e.target.value as QType)}>
+          <Select value={d.qtype} disabled={!canType} onChange={(e) => set('qtype', e.target.value as QType)}>
             {QTYPES.map((q, i) => (
               <option key={q} value={q}>
                 {i + 1}. {t(`qt_${q}`)}
@@ -192,7 +198,7 @@ export default function QuestionEditor({
                       <IconBtn label="✏️" title={t('edit')} onClick={() => optionRefs.current[o.key]?.focus()} />
                       <IconBtn label="⬆️" title={t('moveUp')} disabled={i === 0} onClick={() => moveOpt(i, -1)} />
                       <IconBtn label="⬇️" title={t('moveDown')} disabled={i === d.options.length - 1} onClick={() => moveOpt(i, 1)} />
-                      <IconBtn label="🗑️" title={t('delete')} onClick={() => setRemoveKey(o.key)} />
+                      {canOptions && <IconBtn label="🗑️" title={t('delete')} onClick={() => setRemoveKey(o.key)} />}
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -208,9 +214,11 @@ export default function QuestionEditor({
                 </div>
               ))}
             </div>
-            <Button variant="soft" block className="mt-3" onClick={addOpt}>
-              {t('addOption')}
-            </Button>
+            {canOptions && (
+              <Button variant="soft" block className="mt-3" onClick={addOpt}>
+                {t('addOption')}
+              </Button>
+            )}
           </div>
         )}
 
@@ -234,32 +242,36 @@ export default function QuestionEditor({
 
         <Bilingual label={t('hint')} multiline uz={d.hint_uz} ru={d.hint_ru} onUz={(v) => set('hint_uz', v)} onRu={(v) => set('hint_ru', v)} />
 
-        <div>
-          <Label>{t('image')}</Label>
-          {d.image_url ? (
-            <div className="space-y-2">
+        {(canMedia || d.image_url) && (
+          <div>
+            <Label>{t('image')}</Label>
+            {d.image_url && !canMedia ? (
               <img src={d.image_url} alt="" className="max-h-56 w-full rounded-2xl border border-line object-contain" />
-              <Button variant="outline" size="md" block onClick={() => set('image_url', '')}>
-                {t('removeImage')}
+            ) : d.image_url ? (
+              <div className="space-y-2">
+                <img src={d.image_url} alt="" className="max-h-56 w-full rounded-2xl border border-line object-contain" />
+                <Button variant="outline" size="md" block onClick={() => set('image_url', '')}>
+                  {t('removeImage')}
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" block loading={uploading} onClick={() => fileRef.current?.click()}>
+                {t('uploadImage')}
               </Button>
-            </div>
-          ) : (
-            <Button variant="outline" block loading={uploading} onClick={() => fileRef.current?.click()}>
-              {t('uploadImage')}
-            </Button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) upload(f)
-              e.target.value = ''
-            }}
-          />
-        </div>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) upload(f)
+                e.target.value = ''
+              }}
+            />
+          </div>
+        )}
       </div>
       <ConfirmDialog
         open={!!removeKey}

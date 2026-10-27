@@ -67,6 +67,7 @@ def update_user(user_id: int, body: UserPatch, user: User = Depends(super_only),
         if body.role == "user":
             # rights are taken away completely, so a later promotion starts from scratch
             target.admin_suspended = False
+            target.permissions = None
             for row in db.scalars(select(SurveyManager).where(SurveyManager.user_id == target.id)):
                 db.delete(row)
         elif old == "user":

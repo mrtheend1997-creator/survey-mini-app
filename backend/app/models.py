@@ -24,7 +24,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
-    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -72,8 +71,10 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="", server_default="")
     admin_suspended: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     all_surveys: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
-    can_export: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
-    can_publish: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    # access level for "all surveys": view | edit | full (see services/permissions.py)
+    all_surveys_level: Mapped[str] = mapped_column(String(10), default="full", server_default="full")
+    # {permission: bool}; NULL means the default set for the role
+    permissions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     role_assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     role_assigned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
@@ -126,8 +127,8 @@ class Survey(Base):
 class SurveyManager(Base):
     """Access to one survey given by a Super Admin.
 
-    For an Admin it means "may manage this survey" (besides the surveys they own); for an Analyst
-    with `all_surveys` off it means "may see the results of this survey".
+    `level` says how much: view (results only), edit (content, not publish/delete) or full.
+    Analysts always get view.
     """
 
     __tablename__ = "survey_managers"
@@ -136,6 +137,7 @@ class SurveyManager(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     survey_id: Mapped[int] = mapped_column(ForeignKey("surveys.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    level: Mapped[str] = mapped_column(String(10), default="full", server_default="full")
 
 
 class Question(Base):

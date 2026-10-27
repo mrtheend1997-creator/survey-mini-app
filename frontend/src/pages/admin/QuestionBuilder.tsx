@@ -5,6 +5,7 @@ import { useApp } from '../../app-context'
 import { Button, Card, ConfirmDialog, Empty, ErrorBox, Spinner, StatusBadge } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { pick } from '../../i18n'
+import { can } from '../../permissions'
 import type { AdminSurvey, QuestionT } from '../../types'
 import QuestionEditor, { IconBtn } from './QuestionEditor'
 
@@ -12,7 +13,7 @@ export default function QuestionBuilder() {
   const { id } = useParams()
   const surveyId = Number(id)
   const navigate = useNavigate()
-  const { t, lang, me, toast, showError, errorText } = useApp()
+  const { t, lang, toast, showError, errorText } = useApp()
   const { data: s, error, loading, reload, setData } = useLoad(() => api.get<AdminSurvey>(`/api/admin/surveys/${surveyId}`), [surveyId])
   const [editing, setEditing] = useState<QuestionT | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -52,7 +53,9 @@ export default function QuestionBuilder() {
   if (loading && !s) return <Spinner />
   if (error || !s) return <ErrorBox text={errorText(error)} onRetry={reload} />
   const questions = s.questions ?? []
-  const addButton = (
+  const canQuestions = can(s, 'question_manage')
+  const canPublish = can(s, 'publish')
+  const addButton = canQuestions && (
     <Button variant="success" block className="min-h-[58px] text-lg" onClick={() => openEditor(null)}>
       {t('addQuestion')}
     </Button>
@@ -73,7 +76,7 @@ export default function QuestionBuilder() {
       {s.has_unpublished_changes && (
         <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
           <div>{t('unpublishedChanges', { v: s.version_number ?? 1 })}</div>
-          <Button variant="success" size="md" className="mt-3" disabled={!me?.can_publish} onClick={() => setConfirmPublish(true)}>
+          <Button variant="success" size="md" className="mt-3" disabled={!canPublish} onClick={() => setConfirmPublish(true)}>
             {t('publishChanges')}
           </Button>
         </div>
@@ -84,7 +87,7 @@ export default function QuestionBuilder() {
           {t('preview')}
         </Button>
         {!s.published_version_id ? (
-          <Button variant="primary" size="md" onClick={() => setConfirmPublish(true)} disabled={!questions.length || !me?.can_publish}>
+          <Button variant="primary" size="md" onClick={() => setConfirmPublish(true)} disabled={!questions.length || !canPublish}>
             {t('publish')}
           </Button>
         ) : (
@@ -122,15 +125,17 @@ export default function QuestionBuilder() {
                 {q.image_url && <div className="mt-1 text-sm text-muted">🖼️ {t('image')}</div>}
               </div>
             </div>
-            <div className="mt-3 flex gap-1.5">
-              <Button size="sm" variant="primary" className="min-w-0 flex-1" onClick={() => openEditor(q)}>
-                {t('change')}
-              </Button>
-              <IconBtn label="📑" title={t('duplicate')} onClick={() => act(() => api.post(`/api/admin/questions/${q.id}/duplicate`), t('savedOk'))} />
-              <IconBtn label="⬆️" title={t('moveUp')} disabled={i === 0} onClick={() => move(q, 'up')} />
-              <IconBtn label="⬇️" title={t('moveDown')} disabled={i === questions.length - 1} onClick={() => move(q, 'down')} />
-              <IconBtn label="🗑️" title={t('delete')} onClick={() => setToDelete(q)} />
-            </div>
+            {canQuestions && (
+              <div className="mt-3 flex gap-1.5">
+                <Button size="sm" variant="primary" className="min-w-0 flex-1" onClick={() => openEditor(q)}>
+                  {t('change')}
+                </Button>
+                <IconBtn label="📑" title={t('duplicate')} onClick={() => act(() => api.post(`/api/admin/questions/${q.id}/duplicate`), t('savedOk'))} />
+                <IconBtn label="⬆️" title={t('moveUp')} disabled={i === 0} onClick={() => move(q, 'up')} />
+                <IconBtn label="⬇️" title={t('moveDown')} disabled={i === questions.length - 1} onClick={() => move(q, 'down')} />
+                <IconBtn label="🗑️" title={t('delete')} onClick={() => setToDelete(q)} />
+              </div>
+            )}
           </Card>
         ))}
       </div>
@@ -141,6 +146,7 @@ export default function QuestionBuilder() {
         open={editorOpen}
         surveyId={s.id}
         question={editing}
+        permissions={s.permissions}
         onClose={() => setEditorOpen(false)}
         onSaved={() => {
           setEditorOpen(false)

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..errors import ApiError
+from . import permissions as perms
 from ..models import Option, Question, Survey, SurveyManager, SurveyVersion, User
 
 
@@ -16,39 +17,13 @@ def today() -> date:
     return datetime.now(ZoneInfo(get_settings().app_timezone)).date()
 
 
-def _granted(db: Session, user: User, survey: Survey) -> bool:
-    return (
-        db.scalar(
-            select(SurveyManager.id).where(
-                SurveyManager.survey_id == survey.id, SurveyManager.user_id == user.id
-            )
-        )
-        is not None
-    )
-
-
 def can_manage(db: Session, user: User, survey: Survey) -> bool:
-    """Super Admin: every survey. Admin: own surveys, surveys granted to them, or all if allowed."""
-    role = user.access_role
-    if role == "super_admin":
-        return True
-    if role != "admin":
-        return False
-    return user.all_surveys or survey.owner_id == user.id or _granted(db, user, survey)
+    """May change the survey's content (edit or full access and at least one editing permission)."""
+    return bool(perms.survey_permissions(db, user, survey) - perms.VIEW_PERMS)
 
 
 def can_view(db: Session, user: User, survey: Survey) -> bool:
-    if user.access_role == "analyst":
-        return user.all_surveys or _granted(db, user, survey)
-    return can_manage(db, user, survey)
-
-
-def can_export(user: User) -> bool:
-    return user.access_role == "super_admin" or user.can_export
-
-
-def can_publish(user: User) -> bool:
-    return user.access_role == "super_admin" or user.can_publish
+    return perms.survey_level(db, user, survey) is not None
 
 
 def get_survey_or_404(db: Session, survey_id: int) -> Survey:
@@ -58,15 +33,15 @@ def get_survey_or_404(db: Session, survey_id: int) -> Survey:
     return survey
 
 
-def get_manageable_survey(db: Session, user: User, survey_id: int) -> Survey:
+def get_survey_for(db: Session, user: User, survey_id: int, perm: str) -> Survey:
+    """The survey, if the user may do `perm` with it (permission switch AND access level)."""
     survey = get_survey_or_404(db, survey_id)
-    if not can_manage(db, user, survey):
-        raise ApiError(403, "forbidden")
+    perms.require_on(db, user, survey, perm)
     return survey
 
 
 def get_viewable_survey(db: Session, user: User, survey_id: int) -> Survey:
-    """Results are visible to whoever may manage the survey, and to Analysts allowed to see it."""
+    """Any access to the survey at all (needed e.g. to open the question builder)."""
     survey = get_survey_or_404(db, survey_id)
     if not can_view(db, user, survey):
         raise ApiError(403, "forbidden")

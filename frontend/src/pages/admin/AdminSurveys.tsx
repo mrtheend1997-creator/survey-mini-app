@@ -5,6 +5,7 @@ import { useApp } from '../../app-context'
 import { Button, Card, ConfirmDialog, Empty, ErrorBox, Input, Spinner, StatusBadge } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { formatDate, pick } from '../../i18n'
+import { can, meCan } from '../../permissions'
 import type { AdminSurvey } from '../../types'
 
 const STATUSES = ['', 'draft', 'active', 'paused', 'finished'] as const
@@ -17,7 +18,7 @@ export default function AdminSurveys() {
   const [toDelete, setToDelete] = useState<AdminSurvey | null>(null)
   const [busy, setBusy] = useState(false)
   const { data, error, loading, reload } = useLoad(() => api.get<AdminSurvey[]>(`/api/admin/surveys${qs({ q, status })}`), [status])
-  const manager = me?.role === 'admin' || me?.role === 'super_admin'
+  const canCreate = meCan(me, 'survey_create')
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     try {
@@ -34,7 +35,7 @@ export default function AdminSurveys() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">{t('nav_surveys')}</h1>
       </div>
-      {manager && (
+      {canCreate && (
         <Button variant="success" block className="mt-3 min-h-[58px] text-lg" onClick={() => navigate('/admin/surveys/new')}>
           {t('createSurvey')}
         </Button>
@@ -93,10 +94,12 @@ export default function AdminSurveys() {
               <Button size="md" variant="soft" onClick={() => navigate(`/admin/surveys/${s.id}/preview`)}>
                 {t('preview')}
               </Button>
-              <Button size="md" variant="soft" onClick={() => navigate(`/admin/results/${s.id}`)}>
-                {t('results')}
-              </Button>
-              {s.can_manage && s.status === 'active' && (
+              {can(s, 'results_view') && (
+                <Button size="md" variant="soft" onClick={() => navigate(`/admin/results/${s.id}`)}>
+                  {t('results')}
+                </Button>
+              )}
+              {can(s, 'publish') && s.status === 'active' && (
                 <Button
                   size="md"
                   variant="outline"
@@ -105,7 +108,7 @@ export default function AdminSurveys() {
                   {t('pause')}
                 </Button>
               )}
-              {s.can_manage && me?.can_publish && s.status !== 'active' && (
+              {can(s, 'publish') && s.status !== 'active' && (
                 <Button
                   size="md"
                   variant="success"
@@ -122,12 +125,12 @@ export default function AdminSurveys() {
                   {s.published_version_id ? t('resume') : t('publish')}
                 </Button>
               )}
-              {s.can_manage && (
+              {canCreate && (
                 <Button size="md" variant="outline" onClick={() => act(() => api.post(`/api/admin/surveys/${s.id}/duplicate`), t('savedOk'))}>
                   {t('duplicate')}
                 </Button>
               )}
-              {s.can_manage && (
+              {can(s, 'survey_delete') && (
                 <Button size="md" variant="outline" className="!text-red-600" onClick={() => setToDelete(s)}>
                   {t('delete')}
                 </Button>
