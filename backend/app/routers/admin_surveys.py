@@ -12,7 +12,6 @@ from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
 from ..models import (
-    CHOICE_TYPES,
     Option,
     Question,
     Response,
@@ -24,6 +23,7 @@ from ..models import (
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
+from ..services import qtypes
 from ..services import permissions as perms
 from ..services.surveys import (
     can_manage,
@@ -111,8 +111,13 @@ def question_out(db: Session, q: Question) -> dict:
         "min_choices": q.min_choices,
         "max_choices": q.max_choices,
         "allow_other": q.allow_other,
+        "description_uz": q.description_uz,
+        "description_ru": q.description_ru,
+        "video_url": q.video_url,
+        "hidden": q.hidden,
+        "settings": q.settings or {},
         "options": [
-            {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru}
+            {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)
         ],
     }
@@ -231,14 +236,22 @@ def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_
 def _validate_for_publish(db: Session, s: Survey) -> None:
     if not s.title_uz.strip() or not s.title_ru.strip():
         raise ApiError(422, "title_required")
-    questions = live_questions(db, s.id)
-    if not questions:
+    questions = [q for q in live_questions(db, s.id) if not q.hidden]
+    if not any(q.qtype not in qtypes.NO_ANSWER_TYPES for q in questions):
         raise ApiError(422, "no_questions")
     for q in questions:
+        opts = live_options(db, q.id)
         _validate_question_fields(
-            q.text_uz, q.text_ru, q.qtype, [(o.text_uz, o.text_ru) for o in live_options(db, q.id)],
+            q.text_uz, q.text_ru, q.qtype, [(o.text_uz, o.text_ru) for o in opts],
             q.min_choices, q.max_choices, q.allow_other, question_id=q.id,
         )
+        try:
+            qtypes.clean_settings(q.qtype, q.settings)
+        except ApiError as e:
+            e.detail["question_id"] = q.id
+            raise
+        if s.survey_type == "anonymous" and q.qtype in qtypes.PERSONAL_TYPES:
+            raise ApiError(422, "personal_in_anonymous", {"question_id": q.id})
 
 
 @router.post("/surveys/{survey_id}/publish")
@@ -311,12 +324,11 @@ def _validate_question_fields(
     extra = {"question_id": question_id} if question_id else None
     if not text_uz.strip() or not text_ru.strip():
         raise ApiError(422, "question_text_required", extra)
-    if qtype in CHOICE_TYPES:
-        if len(options) < 2:
-            raise ApiError(422, "options_required", extra)
+    if qtype in qtypes.OPTION_TYPES:
+        qtypes.check_options(qtype, len(options), question_id)
         if any(not uz.strip() or not ru.strip() for uz, ru in options):
             raise ApiError(422, "option_text_required", extra)
-    if qtype == "multiple":
+    if qtype in ("multiple", "image_choice"):
         available = len(options) + (1 if allow_other else 0)
         if min_choices and max_choices and min_choices > max_choices:
             raise ApiError(422, "invalid_choice_limits", extra)
@@ -324,16 +336,24 @@ def _validate_question_fields(
             raise ApiError(422, "invalid_choice_limits", extra)
 
 
+def _check_video(url: str) -> str:
+    url = url.strip()
+    if url and not (url.startswith("https://") and len(url) > 12 and " " not in url):
+        raise ApiError(422, "invalid_video")
+    return url
+
+
 def _sync_options(db: Session, q: Question, items) -> None:
     existing = {o.id: o for o in live_options(db, q.id)}
     keep: set[int] = set()
     for pos, item in enumerate(items):
+        image = item.image_url.strip() if q.qtype == "image_choice" else ""
         if item.id and item.id in existing:
             o = existing[item.id]
-            o.text_uz, o.text_ru, o.position = item.text_uz.strip(), item.text_ru.strip(), pos
+            o.text_uz, o.text_ru, o.position, o.image_url = item.text_uz.strip(), item.text_ru.strip(), pos, image
             keep.add(o.id)
         else:
-            db.add(Option(question_id=q.id, position=pos, text_uz=item.text_uz.strip(), text_ru=item.text_ru.strip()))
+            db.add(Option(question_id=q.id, position=pos, text_uz=item.text_uz.strip(), text_ru=item.text_ru.strip(), image_url=image))
     now = utcnow()
     for oid, o in existing.items():
         if oid not in keep:
@@ -341,24 +361,42 @@ def _sync_options(db: Session, q: Question, items) -> None:
 
 
 def _apply_question(db: Session, q: Question, body: QuestionIn) -> None:
-    is_choice = body.qtype in CHOICE_TYPES
-    opts = body.options if is_choice else []
+    has_options = body.qtype in qtypes.OPTION_TYPES
+    opts = body.options if has_options else []
     _validate_question_fields(
         body.text_uz, body.text_ru, body.qtype, [(o.text_uz, o.text_ru) for o in opts],
         body.min_choices, body.max_choices, body.allow_other,
     )
+    multi = body.qtype == "multiple" or (body.qtype == "image_choice" and bool((body.settings or {}).get("multiple")))
+    q.settings = qtypes.clean_settings(body.qtype, body.settings)
     q.text_uz = body.text_uz.strip()
     q.text_ru = body.text_ru.strip()
     q.qtype = body.qtype
-    q.required = body.required
+    q.required = body.required and body.qtype not in qtypes.NO_ANSWER_TYPES
     q.hint_uz = body.hint_uz.strip()
     q.hint_ru = body.hint_ru.strip()
+    q.description_uz = body.description_uz.strip()
+    q.description_ru = body.description_ru.strip()
     q.image_url = body.image_url.strip()
-    q.allow_other = body.allow_other if body.qtype in ("single", "multiple", "dropdown") else False
-    q.min_choices = body.min_choices if body.qtype == "multiple" else None
-    q.max_choices = body.max_choices if body.qtype == "multiple" else None
+    q.video_url = _check_video(body.video_url)
+    q.hidden = body.hidden
+    q.allow_other = body.allow_other if body.qtype in qtypes.OTHER_TYPES else False
+    q.min_choices = body.min_choices if multi else None
+    q.max_choices = body.max_choices if multi else None
     db.flush()
     _sync_options(db, q, opts)
+
+
+def _media_changed(q: Question | None, body: QuestionIn, db: Session) -> bool:
+    """Does the request add, change or remove a picture or video?"""
+    old_images = {o.id: o.image_url for o in live_options(db, q.id)} if q else {}
+    if body.image_url.strip() != (q.image_url if q else ""):
+        return True
+    if body.video_url.strip() != (q.video_url if q else ""):
+        return True
+    if body.qtype != "image_choice":
+        return False
+    return any(o.image_url.strip() != old_images.get(o.id, "") for o in body.options)
 
 
 def _renumber(db: Session, survey_id: int) -> None:
@@ -382,7 +420,7 @@ def list_questions(survey_id: int, user: User = Depends(staff), db: Session = De
 @router.post("/surveys/{survey_id}/questions")
 def create_question(survey_id: int, body: QuestionIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     s = get_survey_for(db, user, survey_id, "question_manage")
-    if body.image_url.strip():
+    if _media_changed(None, body, db):
         perms.require_on(db, user, s, "media_manage")
     questions = live_questions(db, s.id)
     pos = len(questions) if body.position is None else max(0, min(body.position, len(questions)))
@@ -405,13 +443,20 @@ def update_question(question_id: int, body: QuestionIn, user: User = Depends(adm
     allowed = perms.survey_permissions(db, user, s)
     if body.qtype != q.qtype and "question_type" not in allowed:
         raise ApiError(403, "no_permission")
-    if body.image_url.strip() != q.image_url and "media_manage" not in allowed:
+    if _media_changed(q, body, db) and "media_manage" not in allowed:
         raise ApiError(403, "no_permission")
-    if body.qtype in CHOICE_TYPES and "option_manage" not in allowed:
-        current = {o.id for o in live_options(db, q.id)}
-        sent = {o.id for o in body.options if o.id}
-        if sent != current or any(not o.id for o in body.options):
-            raise ApiError(403, "no_permission")
+    if "option_manage" not in allowed:
+        if body.qtype in qtypes.OPTION_TYPES:
+            current = {o.id for o in live_options(db, q.id)}
+            sent = {o.id for o in body.options if o.id}
+            if sent != current or any(not o.id for o in body.options):
+                raise ApiError(403, "no_permission")
+        if body.qtype in ("matrix", "matrix_multi"):
+            # matrix rows count as answer options too
+            current_rows = {r["id"] for r in (q.settings or {}).get("rows", [])}
+            sent_rows = [r.get("id") for r in (body.settings or {}).get("rows", []) if isinstance(r, dict)]
+            if set(sent_rows) != current_rows or len(sent_rows) != len(current_rows):
+                raise ApiError(403, "no_permission")
     _apply_question(db, q, body)
     mark_changed(s)
     audit.log(db, user, "question.update", "question", q.id, survey_id=s.id)
@@ -445,11 +490,16 @@ def _copy_question(db: Session, q: Question, survey_id: int, position: int) -> Q
         min_choices=q.min_choices,
         max_choices=q.max_choices,
         allow_other=q.allow_other,
+        description_uz=q.description_uz,
+        description_ru=q.description_ru,
+        video_url=q.video_url,
+        hidden=q.hidden,
+        settings=dict(q.settings) if q.settings else None,
     )
     db.add(nq)
     db.flush()
     for o in live_options(db, q.id):
-        db.add(Option(question_id=nq.id, position=o.position, text_uz=o.text_uz, text_ru=o.text_ru))
+        db.add(Option(question_id=nq.id, position=o.position, text_uz=o.text_uz, text_ru=o.text_ru, image_url=o.image_url))
     return nq
 
 

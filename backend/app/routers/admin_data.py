@@ -16,11 +16,11 @@ from ..auth import require_role
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Answer, Response, Survey, SurveyVersion, User
+from ..models import Answer, Response, StoredFile, Survey, SurveyVersion, User
 from ..services import audit
 from ..services.answers import readable
 from ..services.excel import build_workbook
-from ..services.results import survey_results
+from ..services.results import region_names, survey_results
 from ..services import permissions as perms
 from ..services.surveys import effective_status, get_survey_for, viewable_surveys_query
 
@@ -259,6 +259,8 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == r.id))}
     anonymous = s.survey_type == "anonymous"
     u = db.get(User, r.user_id) if (r.user_id and not anonymous) else None
+    questions = [q for q in version.snapshot.get("questions", []) if q["qtype"] != "info"]
+    regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
     return {
         "id": r.id,
         "survey_id": s.id,
@@ -278,8 +280,56 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
                 "question_id": q["id"],
                 "text_uz": q["text_uz"],
                 "text_ru": q["text_ru"],
-                "answer": readable(q, answers.get(q["id"]), lang),
+                "answer": readable(q, answers.get(q["id"]), lang, regions),
+                "files": (answers.get(q["id"]) or {}).get("files", []) if q["qtype"] == "file" else [],
             }
-            for q in version.snapshot.get("questions", [])
+            for q in questions
         ],
     }
+
+
+# ---------------------------------------------------------------- files attached to answers
+
+
+@router.post("/responses/{response_id}/file-link")
+def answer_file_link(response_id: int, key: str = Query(..., max_length=128), user: User = Depends(staff), db: Session = Depends(get_db)):
+    """Short-lived signed link to a file a respondent attached (opened by Telegram's downloader)."""
+    r = db.get(Response, response_id)
+    if r is None:
+        raise ApiError(404, "not_found")
+    get_survey_for(db, user, r.survey_id, "results_view")
+    row = db.get(StoredFile, key)
+    if row is None or not key.startswith(f"answer/{r.id}/"):
+        raise ApiError(404, "not_found")
+    payload = f"{r.id}.{key.rsplit('/', 1)[-1]}.{user.id}.{int(_time.time()) + LINK_TTL}"
+    return {"url": f"/api/admin/answer-file/{payload}.{_sign(payload)}", "file_name": row.name or key.rsplit("/", 1)[-1]}
+
+
+@router.get("/answer-file/{token}")
+def answer_file(token: str, db: Session = Depends(get_db)):
+    try:
+        rid, name, ext, uid, exp, sig = token.split(".")
+        payload = ".".join((rid, name, ext, uid, exp))
+        ok = hmac.compare_digest(_sign(payload), sig) and int(exp) >= _time.time()
+    except ValueError:
+        ok = False
+    if not ok:
+        raise ApiError(403, "forbidden")
+    user = db.get(User, int(uid))
+    r = db.get(Response, int(rid))
+    if user is None or user.is_blocked or r is None:
+        raise ApiError(403, "forbidden")
+    get_survey_for(db, user, r.survey_id, "results_view")
+    row = db.get(StoredFile, f"answer/{r.id}/{name}.{ext}")
+    if row is None:
+        raise ApiError(404, "not_found")
+    filename = row.name or f"{name}.{ext}"
+    return HttpResponse(
+        row.content,
+        media_type=row.content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename=file.{ext}; filename*=UTF-8''{quote(filename)}",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )

@@ -94,8 +94,12 @@ def question_snapshot(db: Session, q: Question) -> dict:
         "min_choices": q.min_choices,
         "max_choices": q.max_choices,
         "allow_other": q.allow_other,
+        "description_uz": q.description_uz,
+        "description_ru": q.description_ru,
+        "video_url": q.video_url,
+        "settings": q.settings or {},
         "options": [
-            {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru}
+            {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)
         ],
     }
@@ -108,7 +112,7 @@ def build_snapshot(db: Session, survey: Survey) -> dict:
         "description_uz": survey.description_uz,
         "description_ru": survey.description_ru,
         "survey_type": survey.survey_type,
-        "questions": [question_snapshot(db, q) for q in live_questions(db, survey.id)],
+        "questions": [question_snapshot(db, q) for q in live_questions(db, survey.id) if not q.hidden],
     }
 
 

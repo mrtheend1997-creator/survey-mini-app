@@ -5,7 +5,8 @@ import { useApp } from '../../app-context'
 import { Button, Card, Empty, ErrorBox, Modal, Spinner } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { formatDate, pick } from '../../i18n'
-import type { AdminSurvey } from '../../types'
+import { openDownload } from '../../telegram'
+import type { AdminSurvey, UploadedFile } from '../../types'
 import { useExcelDownload } from './AdminResults'
 
 interface Respondent {
@@ -35,7 +36,7 @@ interface Detail {
   completed_at: string | null
   version_number: number
   respondent: Respondent | null
-  items: { question_id: number; text_uz: string; text_ru: string; answer: string }[]
+  items: { question_id: number; text_uz: string; text_ru: string; answer: string; files: UploadedFile[] }[]
 }
 
 export default function AdminResponses() {
@@ -60,6 +61,15 @@ export default function AdminResponses() {
     setPage(1)
     setRows([])
     setStatus(s)
+  }
+
+  const downloadFile = async (responseId: number, f: UploadedFile) => {
+    try {
+      const link = await api.post<{ url: string; file_name: string }>(`/api/admin/responses/${responseId}/file-link${qs({ key: f.key })}`)
+      openDownload(link.url, link.file_name)
+    } catch (e) {
+      showError(e)
+    }
   }
 
   const open = async (r: Row) => {
@@ -150,7 +160,17 @@ export default function AdminResponses() {
                 <div className="text-sm font-semibold text-muted">
                   {i + 1}. {pick(it, 'text', lang)}
                 </div>
-                <div className="mt-0.5 text-base">{it.answer || <span className="text-muted">{t('noAnswer')}</span>}</div>
+                {it.files?.length ? (
+                  <div className="mt-1 space-y-1.5">
+                    {it.files.map((f) => (
+                      <Button key={f.key} size="sm" variant="outline" block onClick={() => downloadFile(detail.id, f)}>
+                        📎 {f.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 whitespace-pre-line text-base">{it.answer || <span className="text-muted">{t('noAnswer')}</span>}</div>
+                )}
               </div>
             ))}
           </div>

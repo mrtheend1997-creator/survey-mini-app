@@ -3,18 +3,19 @@
 import re
 import secrets
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, has_role
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Answer, AppSetting, Participation, Response, Survey, SurveyVersion, User, utcnow
+from ..models import Answer, AppSetting, Participation, Region, Response, StoredFile, Survey, SurveyVersion, User, utcnow
 from ..schemas import AnswerIn, MeUpdate, ProgressIn, StartIn
+from ..services import files
 from ..services import permissions as perms
-from ..services.answers import meets_minimum, normalize
-from ..services.surveys import effective_status, estimated_minutes, is_open
+from ..services.answers import Context, normalize, problem
+from ..services.surveys import effective_status, estimated_minutes, is_open, today
 
 router = APIRouter(prefix="/api", tags=["public"])
 
@@ -236,7 +237,7 @@ def save_answer(
     if resp.status != "in_progress":
         raise ApiError(409, "response_completed")
     q = _question(db, resp, question_id)
-    value = normalize(q, body.value)
+    value = normalize(q, body.value, answer_context(db, resp, q))
     answer = db.scalar(select(Answer).where(Answer.response_id == resp.id, Answer.question_id == question_id))
     if value is None:
         if answer is not None:
@@ -250,6 +251,72 @@ def save_answer(
     resp.updated_at = utcnow()
     db.commit()
     return {"ok": True, "value": value}
+
+
+def region_parents(db: Session) -> dict[int, int | None]:
+    return dict(db.execute(select(Region.id, Region.parent_id).where(Region.deleted_at.is_(None))).all())
+
+
+def answer_context(db: Session, resp: Response, q: dict) -> Context:
+    prefix = f"answer/{resp.id}/"
+    return Context(
+        today=today(),
+        regions=region_parents(db) if q["qtype"] == "region" else {},
+        file_ok=lambda key: key.startswith(prefix) and db.get(StoredFile, key) is not None,
+    )
+
+
+MAX_FILES_PER_RESPONSE = 30
+
+
+@router.post("/responses/{token}/files/{question_id}")
+async def upload_answer_file(
+    token: str,
+    question_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """A file the respondent attaches to a "file upload" question.
+
+    The file is checked by its content, kept in the database (survives redeploys) and can only be
+    downloaded by staff who may see this survey's results.
+    """
+    resp = _get_own_response(db, user, token)
+    if resp.status != "in_progress":
+        raise ApiError(409, "response_completed")
+    q = _question(db, resp, question_id)
+    if q["qtype"] != "file":
+        raise ApiError(422, "invalid_answer")
+    s = q.get("settings") or {}
+    max_bytes = (s.get("max_mb") or 10) * 1024 * 1024
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ApiError(413, "file_too_large")
+    ext = files.detect_file(data, file.filename or "")
+    if ext is None or ext.lstrip(".") not in (s.get("formats") or []):
+        raise ApiError(415, "file_format")
+    prefix = f"answer/{resp.id}/"
+    used = db.scalar(select(func.count()).select_from(StoredFile).where(StoredFile.key.startswith(prefix))) or 0
+    if used >= MAX_FILES_PER_RESPONSE:
+        raise ApiError(409, "too_many_files")
+    key = f"{prefix}{secrets.token_hex(16)}{ext}"
+    name = (file.filename or f"file{ext}").replace("/", "_").replace("\\", "_")
+    files.put(db, key, data, ext, name)
+    db.commit()
+    return {"key": key, "name": name, "size": len(data)}
+
+
+@router.get("/regions")
+def list_regions(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Regions with their districts, for the "Region → district" question."""
+    rows = list(db.scalars(select(Region).where(Region.deleted_at.is_(None)).order_by(Region.position, Region.id)))
+    out = [{"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru, "districts": []} for r in rows if r.parent_id is None]
+    by_id = {r["id"]: r for r in out}
+    for r in rows:
+        if r.parent_id in by_id:
+            by_id[r.parent_id]["districts"].append({"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru})
+    return out
 
 
 @router.patch("/responses/{token}")
@@ -274,11 +341,13 @@ def submit(token: str, user: User = Depends(get_current_user), db: Session = Dep
 
     version = db.get(SurveyVersion, resp.version_id)
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == resp.id))}
+    questions = version.snapshot.get("questions", [])
+    ctx = Context(regions=region_parents(db) if any(q["qtype"] == "region" for q in questions) else {})
     missing = []
-    for idx, q in enumerate(version.snapshot.get("questions", [])):
-        v = answers.get(q["id"])
-        if (q.get("required") and v is None) or not meets_minimum(q, v):
-            missing.append({"question_id": q["id"], "index": idx})
+    for idx, q in enumerate(questions):
+        reason = problem(q, answers.get(q["id"]), ctx)
+        if reason:
+            missing.append({"question_id": q["id"], "index": idx, "reason": reason})
     if missing:
         raise ApiError(422, "required_missing", {"missing": missing})
 
