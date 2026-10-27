@@ -128,14 +128,22 @@ class UserPatch(BaseModel):
 StaffRole = Literal["super_admin", "admin", "analyst"]
 
 
+AccessLevel = Literal["view", "edit", "full"]
+
+
+class SurveyAccess(BaseModel):
+    id: int
+    level: AccessLevel = "full"
+
+
 class AdminIn(BaseModel):
     telegram_id: int
     name: str = Field(default="", max_length=255)
     role: StaffRole
     all_surveys: bool | None = None  # default depends on the role
-    can_export: bool = True
-    can_publish: bool = True
-    survey_ids: list[int] = Field(default_factory=list, max_length=1000)
+    all_surveys_level: AccessLevel = "full"
+    permissions: dict[str, bool] | None = None  # default: the usual set for the role
+    surveys: list[SurveyAccess] = Field(default_factory=list, max_length=1000)
 
 
 class AdminPatch(BaseModel):
@@ -143,9 +151,9 @@ class AdminPatch(BaseModel):
     role: StaffRole | None = None
     suspended: bool | None = None
     all_surveys: bool | None = None
-    can_export: bool | None = None
-    can_publish: bool | None = None
-    survey_ids: list[int] | None = Field(default=None, max_length=1000)
+    all_surveys_level: AccessLevel | None = None
+    permissions: dict[str, bool] | None = None
+    surveys: list[SurveyAccess] | None = Field(default=None, max_length=1000)
 
 
 class SettingsIn(BaseModel):

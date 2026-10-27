@@ -4,6 +4,7 @@ import { useApp } from '../../app-context'
 import { Button, Card, KpiCard, SectionTitle, Spinner, StatusBadge } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { pick } from '../../i18n'
+import { meCan } from '../../permissions'
 import type { AdminSurvey } from '../../types'
 
 export interface Dashboard {
@@ -20,7 +21,7 @@ export default function AdminHome() {
   const navigate = useNavigate()
   const dash = useLoad(() => api.get<Dashboard>('/api/admin/dashboard'))
   const surveys = useLoad(() => api.get<AdminSurvey[]>('/api/admin/surveys'))
-  const manager = me?.role === 'admin' || me?.role === 'super_admin'
+  const manager = meCan(me, 'survey_create')
   const k = dash.data?.kpi
 
   return (

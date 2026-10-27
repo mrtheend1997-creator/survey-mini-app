@@ -38,12 +38,12 @@ def test_readiness_scenario(client):
     assert look == {"exists": False, "telegram_id": STAFF_ID}
     r = client.post(
         "/api/admin/admins",
-        json={"telegram_id": STAFF_ID, "name": "Aziz (HR)", "role": "admin", "survey_ids": [granted["id"]]},
+        json={"telegram_id": STAFF_ID, "name": "Aziz (HR)", "role": "admin", "surveys": [{"id": granted["id"], "level": "full"}]},
         headers=SUPER,
     )
     assert r.status_code == 200, r.text
     a = r.json()
-    assert a["status"] == "pending" and a["role"] == "admin" and a["survey_ids"] == [granted["id"]]
+    assert a["status"] == "pending" and a["role"] == "admin" and a["surveys"] == [{"id": granted["id"], "level": "full"}]
     assert a["role_assigned_by"] == "Boss" and a["role_assigned_at"]
     admin_id = a["id"]
 
@@ -76,14 +76,15 @@ def test_readiness_scenario(client):
     assert client.put("/api/admin/branding/logo", files={"file": ("a.png", b"x", "image/png")}, headers=STAFF).status_code == 403
 
     # rights can be narrowed: no publishing, no export
-    client.patch(f"/api/admin/admins/{admin_id}", json={"can_publish": False, "can_export": False}, headers=SUPER)
+    narrowed = dict(a["permissions"], publish=False, export=False)
+    client.patch(f"/api/admin/admins/{admin_id}", json={"permissions": narrowed}, headers=SUPER)
     me = client.get("/api/me", headers=STAFF).json()
     assert not me["can_publish"] and not me["can_export"]
     r = client.post(f"/api/admin/surveys/{granted['id']}/publish", headers=STAFF)
     assert r.status_code == 403 and r.json()["detail"]["code"] == "no_publish_right"
     assert client.get(f"/api/admin/surveys/{granted['id']}/export.xlsx", headers=STAFF).status_code == 403
     assert client.post(f"/api/admin/surveys/{granted['id']}/export-link", headers=STAFF).status_code == 403
-    client.patch(f"/api/admin/admins/{admin_id}", json={"can_export": True}, headers=SUPER)
+    client.patch(f"/api/admin/admins/{admin_id}", json={"permissions": dict(narrowed, export=True)}, headers=SUPER)
 
     # 6-7. the Super Admin makes them an Analyst: they now only look at the surveys allowed to them
     r = client.patch(f"/api/admin/admins/{admin_id}", json={"role": "analyst", "all_surveys": False}, headers=SUPER)

@@ -14,6 +14,7 @@ export interface Me {
   can_admin: boolean
   can_export: boolean
   can_publish: boolean
+  permissions: string[]
 }
 
 export interface OptionT {
@@ -104,6 +105,8 @@ export interface AdminSurvey {
   owner: { id: number; name: string } | null
   manager_ids: number[]
   can_manage: boolean
+  access_level: 'view' | 'edit' | 'full' | null
+  permissions: string[]
   created_at: string
   updated_at: string
   questions?: QuestionT[]
@@ -170,9 +173,9 @@ export interface AdminRow {
   role: StaffRole
   status: AdminStatus
   all_surveys: boolean
-  can_export: boolean
-  can_publish: boolean
-  survey_ids: number[]
+  all_surveys_level: 'view' | 'edit' | 'full'
+  permissions: Record<string, boolean>
+  surveys: { id: number; level: 'view' | 'edit' | 'full' }[]
   owned_surveys: number
   role_assigned_at: string | null
   role_assigned_by: string | null

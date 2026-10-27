@@ -5,6 +5,7 @@ import { useApp } from '../../app-context'
 import { Bilingual, Button, Card, ConfirmDialog, ErrorBox, Input, Label, Select, Spinner, StatusBadge } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { pick } from '../../i18n'
+import { can, meCan, type Perm } from '../../permissions'
 import type { AdminSurvey, SurveyStatus, SurveyType, UserRow } from '../../types'
 
 interface FormState {
@@ -156,6 +157,9 @@ export default function SurveyForm() {
   if (survey.loading) return <Spinner />
   if (survey.error) return <ErrorBox text={errorText(survey.error)} onRetry={survey.reload} />
   const readOnly = s ? !s.can_manage : false
+  // a new survey is the creator's own, so their permission switches decide
+  const allowed = (p: Perm) => (s ? can(s, p) : meCan(me, p))
+  const lock = (p: Perm) => !isNew && !allowed(p)
 
   return (
     <div className="pb-6">
@@ -171,7 +175,7 @@ export default function SurveyForm() {
       {s?.has_unpublished_changes && (
         <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
           <div>{t('unpublishedChanges', { v: s.version_number ?? 1 })}</div>
-          {me?.can_publish && (
+          {allowed('publish') && (
             <Button variant="success" size="md" className="mt-3" onClick={() => setConfirm('publish')}>
               {t('publishChanges')}
             </Button>
@@ -191,16 +195,25 @@ export default function SurveyForm() {
       )}
 
       <Card className="mt-4 space-y-5">
-        <Bilingual label={t('surveyTitle')} required uz={form.title_uz} ru={form.title_ru} onUz={(v) => set('title_uz', v)} onRu={(v) => set('title_ru', v)} />
-        <Bilingual
-          label={t('description')}
-          multiline
-          uz={form.description_uz}
-          ru={form.description_ru}
-          onUz={(v) => set('description_uz', v)}
-          onRu={(v) => set('description_ru', v)}
-        />
-        <div className="grid grid-cols-2 gap-3">
+        <fieldset disabled={lock('survey_edit')} className="space-y-5 disabled:opacity-60">
+          <Bilingual
+            label={t('surveyTitle')}
+            required
+            uz={form.title_uz}
+            ru={form.title_ru}
+            onUz={(v) => set('title_uz', v)}
+            onRu={(v) => set('title_ru', v)}
+          />
+          <Bilingual
+            label={t('description')}
+            multiline
+            uz={form.description_uz}
+            ru={form.description_ru}
+            onUz={(v) => set('description_uz', v)}
+            onRu={(v) => set('description_ru', v)}
+          />
+        </fieldset>
+        <fieldset disabled={!allowed('timer_manage')} className="grid grid-cols-2 gap-3 disabled:opacity-60">
           <div>
             <Label>{t('startDate')}</Label>
             <Input type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} />
@@ -209,23 +222,23 @@ export default function SurveyForm() {
             <Label>{t('endDate')}</Label>
             <Input type="date" value={form.end_date} min={form.start_date || undefined} onChange={(e) => set('end_date', e.target.value)} />
           </div>
-        </div>
-        <div>
+        </fieldset>
+        <fieldset disabled={!allowed('anonymity_manage')} className="disabled:opacity-60">
           <Label>{t('type')}</Label>
           <div className="space-y-2">
             {(['anonymous', 'named', 'registered'] as const).map((v) => (
               <Choice key={v} value={v} current={form.survey_type} onPick={(x) => set('survey_type', x)} label={t(`type_${v}`)} />
             ))}
           </div>
-        </div>
-        <div>
+        </fieldset>
+        <fieldset disabled={!allowed('participants_manage')} className="disabled:opacity-60">
           <Label>{t('attempts')}</Label>
           <div className="space-y-2">
             <Choice value={false} current={form.allow_repeat} onPick={(x) => set('allow_repeat', x)} label={t('attempts_once')} />
             <Choice value={true} current={form.allow_repeat} onPick={(x) => set('allow_repeat', x)} label={t('attempts_repeat')} />
           </div>
-        </div>
-        <div>
+        </fieldset>
+        <fieldset disabled={!allowed('publish')} className="disabled:opacity-60">
           <Label>{t('status')}</Label>
           <Select value={form.status} onChange={(e) => set('status', e.target.value as SurveyStatus)}>
             {(['draft', 'active', 'paused', 'finished'] as const).map((v) => (
@@ -234,8 +247,8 @@ export default function SurveyForm() {
               </option>
             ))}
           </Select>
-        </div>
-        <div>
+        </fieldset>
+        <fieldset disabled={lock('survey_edit')} className="disabled:opacity-60">
           <Label>{t('estMinutes')}</Label>
           <Input
             type="number"
@@ -246,7 +259,7 @@ export default function SurveyForm() {
             onChange={(e) => set('estimated_minutes', e.target.value)}
           />
           <p className="mt-1 text-sm text-muted">{t('estMinutesHint')}</p>
-        </div>
+        </fieldset>
         {me?.role === 'super_admin' && (admins.data?.length ?? 0) > 0 && (
           <div>
             <Label>{t('managers')}</Label>
@@ -282,12 +295,12 @@ export default function SurveyForm() {
           <Button variant="primary" block onClick={onAddQuestions} loading={saving === 'questions'}>
             {t('addQuestions')}
           </Button>
-          {me?.can_publish && (isNew || !s?.published_version_id) && (
+          {allowed('publish') && (isNew || !s?.published_version_id) && (
             <Button variant="success" block onClick={() => (isNew ? onPublish() : setConfirm('publish'))} loading={saving === 'publish'}>
               {t('publish')}
             </Button>
           )}
-          {s && (
+          {s && can(s, 'survey_delete') && (
             <Button variant="ghost" block className="!text-red-600" onClick={() => setConfirm('delete')}>
               {t('delete')}
             </Button>

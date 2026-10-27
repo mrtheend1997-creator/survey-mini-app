@@ -15,6 +15,7 @@ from ..errors import ApiError
 from ..models import AuditLog, Survey, SurveyManager, User, utcnow
 from ..schemas import AdminIn, AdminPatch
 from ..services import audit
+from ..services import permissions as perms
 from ..services.admins import MAX_TELEGRAM_ID, check_can_change, is_env_super_admin
 
 router = APIRouter(prefix="/api/admin/admins", tags=["admin-admins"])
@@ -33,15 +34,19 @@ def _status(u: User) -> str:
     return "active"
 
 
-def _survey_ids(db: Session, u: User) -> list[int]:
-    return list(
-        db.scalars(
-            select(SurveyManager.survey_id)
-            .join(Survey, Survey.id == SurveyManager.survey_id)
-            .where(SurveyManager.user_id == u.id, Survey.deleted_at.is_(None))
-            .order_by(SurveyManager.survey_id)
-        )
+def _surveys(db: Session, u: User) -> list[dict]:
+    rows = db.execute(
+        select(SurveyManager.survey_id, SurveyManager.level)
+        .join(Survey, Survey.id == SurveyManager.survey_id)
+        .where(SurveyManager.user_id == u.id, Survey.deleted_at.is_(None))
+        .order_by(SurveyManager.survey_id)
     )
+    return [{"id": sid, "level": level} for sid, level in rows]
+
+
+def _permissions(u: User) -> dict[str, bool]:
+    stored = u.permissions if u.permissions is not None else perms.default_for(u.role)
+    return perms.normalize(stored, u.role)
 
 
 def admin_out(db: Session, u: User, me: User) -> dict:
@@ -55,9 +60,9 @@ def admin_out(db: Session, u: User, me: User) -> dict:
         "role": u.role,
         "status": _status(u),
         "all_surveys": u.all_surveys,
-        "can_export": u.can_export,
-        "can_publish": u.can_publish,
-        "survey_ids": _survey_ids(db, u),
+        "all_surveys_level": "view" if u.role == "analyst" else u.all_surveys_level,
+        "permissions": _permissions(u),
+        "surveys": _surveys(db, u),
         "owned_surveys": len(list(db.scalars(select(Survey.id).where(Survey.owner_id == u.id, Survey.deleted_at.is_(None))))),
         "role_assigned_at": u.role_assigned_at,
         "role_assigned_by": by.name if by else None,
@@ -75,24 +80,38 @@ def _get_staff(db: Session, admin_id: int) -> User:
     return u
 
 
-def _set_surveys(db: Session, u: User, ids: list[int]) -> None:
-    wanted = set(db.scalars(select(Survey.id).where(Survey.id.in_(ids), Survey.deleted_at.is_(None)))) if ids else set()
-    rows = list(db.scalars(select(SurveyManager).where(SurveyManager.user_id == u.id)))
-    have = {r.survey_id for r in rows}
-    for r in rows:
-        if r.survey_id not in wanted:
+def _set_surveys(db: Session, u: User, items: list) -> None:
+    """Replace the list of surveys picked for this administrator, with an access level for each."""
+    levels = {it.id: ("view" if u.role == "analyst" else it.level) for it in items}
+    if levels:
+        alive = set(db.scalars(select(Survey.id).where(Survey.id.in_(levels), Survey.deleted_at.is_(None))))
+        levels = {k: v for k, v in levels.items() if k in alive}
+    for r in db.scalars(select(SurveyManager).where(SurveyManager.user_id == u.id)):
+        if r.survey_id in levels:
+            r.level = levels.pop(r.survey_id)
+        else:
             db.delete(r)
-    for sid in sorted(wanted - have):
-        db.add(SurveyManager(survey_id=sid, user_id=u.id))
+    for sid, level in sorted(levels.items()):
+        db.add(SurveyManager(survey_id=sid, user_id=u.id, level=level))
+
+
+def _apply_role_limits(db: Session, u: User) -> None:
+    """Analysts only look: drop editing permissions and levels when someone is an Analyst."""
+    if u.role != "analyst":
+        return
+    u.all_surveys_level = "view"
+    u.permissions = perms.normalize(_permissions(u), "analyst")
+    for row in db.scalars(select(SurveyManager).where(SurveyManager.user_id == u.id)):
+        row.level = "view"
 
 
 def _rights(u: User, db: Session) -> dict:
     return {
         "role": u.role,
         "all_surveys": u.all_surveys,
-        "can_export": u.can_export,
-        "can_publish": u.can_publish,
-        "survey_ids": _survey_ids(db, u),
+        "all_surveys_level": u.all_surveys_level,
+        "permissions": _permissions(u),
+        "surveys": _surveys(db, u),
     }
 
 
@@ -101,7 +120,12 @@ def list_admins(user: User = Depends(super_only), db: Session = Depends(get_db))
     rows = db.scalars(select(User).where(User.role.in_(STAFF_ROLES)))
     order = {r: i for i, r in enumerate(STAFF_ROLES)}
     items = sorted(rows, key=lambda u: (order[u.role], u.name.lower()))
-    return {"items": [admin_out(db, u, user) for u in items]}
+    return {
+        "items": [admin_out(db, u, user) for u in items],
+        "permission_list": list(perms.PERMISSIONS),
+        "analyst_permissions": sorted(perms.ANALYST_PERMS),
+        "templates": perms.TEMPLATES,
+    }
 
 
 @router.get("/lookup")
@@ -148,11 +172,14 @@ def add_admin(body: AdminIn, user: User = Depends(super_only), db: Session = Dep
     target.role = body.role
     target.admin_suspended = False
     target.all_surveys = body.all_surveys if body.all_surveys is not None else body.role == "analyst"
-    target.can_export = body.can_export
-    target.can_publish = body.can_publish
+    target.all_surveys_level = body.all_surveys_level
+    stored = body.permissions if body.permissions is not None else perms.default_for(body.role)
+    target.permissions = perms.normalize(stored, body.role)
     target.role_assigned_at = utcnow()
     target.role_assigned_by_id = user.id
-    _set_surveys(db, target, body.survey_ids)
+    _set_surveys(db, target, body.surveys)
+    db.flush()
+    _apply_role_limits(db, target)
     db.flush()
     audit.log(
         db, user, "admin.add", "user", target.id,
@@ -173,15 +200,22 @@ def update_admin(admin_id: int, body: AdminPatch, user: User = Depends(super_onl
     if body.name is not None:
         target.display_name = body.name.strip()
     if body.role is not None and body.role != target.role:
+        if target.role == "analyst" and body.permissions is None:
+            # an Analyst becoming an Admin starts from the usual Admin set
+            target.permissions = perms.default_for(body.role)
         target.role = body.role
         target.role_assigned_at = utcnow()
         target.role_assigned_by_id = user.id
-    for field in ("all_surveys", "can_export", "can_publish"):
-        value = getattr(body, field)
-        if value is not None:
-            setattr(target, field, value)
-    if body.survey_ids is not None:
-        _set_surveys(db, target, body.survey_ids)
+    if body.all_surveys is not None:
+        target.all_surveys = body.all_surveys
+    if body.all_surveys_level is not None:
+        target.all_surveys_level = body.all_surveys_level
+    if body.permissions is not None:
+        target.permissions = perms.normalize(body.permissions, target.role)
+    if body.surveys is not None:
+        _set_surveys(db, target, body.surveys)
+    db.flush()
+    _apply_role_limits(db, target)
     if body.suspended is not None:
         target.admin_suspended = body.suspended
     db.flush()
@@ -218,8 +252,8 @@ def remove_admin(admin_id: int, user: User = Depends(super_only), db: Session = 
         target.role = "user"
         target.admin_suspended = False
         target.all_surveys = False
-        target.can_export = True
-        target.can_publish = True
+        target.all_surveys_level = "full"
+        target.permissions = None
         target.role_assigned_at = utcnow()
         target.role_assigned_by_id = user.id
     audit.log(db, user, "admin.remove", "user", None if info.get("deleted_invite") else target.id, **info)

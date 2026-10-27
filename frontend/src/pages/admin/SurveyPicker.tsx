@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
 import { useApp } from '../../app-context'
+import { can, meCan } from '../../permissions'
 import { Button, Card, Empty, ErrorBox, Spinner, StatusBadge } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { pick, type Key } from '../../i18n'
@@ -13,8 +14,8 @@ export default function SurveyPicker({ target }: { target: 'questions' | 'respon
   const { t, lang, me, errorText } = useApp()
   const navigate = useNavigate()
   const { data, error, loading, reload } = useLoad(() => api.get<AdminSurvey[]>('/api/admin/surveys'))
-  const manager = me?.role === 'admin' || me?.role === 'super_admin'
-  const list = target === 'questions' ? data?.filter((s) => s.can_manage) : data
+  const manager = meCan(me, 'survey_create')
+  const list = target === 'questions' ? data?.filter((s) => s.can_manage) : data?.filter((s) => can(s, 'results_view'))
 
   const go = (s: AdminSurvey) => {
     if (target === 'questions') navigate(`/admin/surveys/${s.id}/questions`)

@@ -24,12 +24,12 @@ from ..models import (
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
+from ..services import permissions as perms
 from ..services.surveys import (
     can_manage,
-    can_publish,
     effective_status,
     estimated_minutes,
-    get_manageable_survey,
+    get_survey_for,
     get_viewable_survey,
     live_options,
     live_questions,
@@ -82,6 +82,8 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "owner": {"id": owner.id, "name": owner.full_name or owner.username} if owner else None,
         "manager_ids": _admin_manager_ids(db, s),
         "can_manage": can_manage(db, user, s),
+        "access_level": perms.survey_level(db, user, s),
+        "permissions": sorted(perms.survey_permissions(db, user, s)),
         "created_at": s.created_at,
         "updated_at": s.updated_at,
     }
@@ -148,11 +150,37 @@ def _apply_managers(db: Session, user: User, survey: Survey, ids: list[int] | No
         survey.managers.append(SurveyManager(user_id=uid))
 
 
+# which permission each survey setting needs
+FIELD_PERMS = {
+    "title_uz": "survey_edit",
+    "title_ru": "survey_edit",
+    "description_uz": "survey_edit",
+    "description_ru": "survey_edit",
+    "estimated_minutes": "survey_edit",
+    "start_date": "timer_manage",
+    "end_date": "timer_manage",
+    "survey_type": "anonymity_manage",
+    "allow_repeat": "participants_manage",
+}
+
+
+def _require_fields(allowed: set[str], changed: set[str]) -> None:
+    for field in sorted(changed):
+        perm = FIELD_PERMS.get(field)
+        if perm and perm not in allowed:
+            raise ApiError(403, perms.code_for(perm))
+
+
 @router.post("/surveys")
 def create_survey(body: SurveyIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    perms.require(user, "survey_create")
     if not body.title_uz.strip() and not body.title_ru.strip():
         raise ApiError(422, "title_required")
     data = body.model_dump(exclude={"manager_ids"})
+    # the title and description are part of creating; other settings need their own permission
+    defaults = SurveyIn().model_dump()
+    changed = {k for k, v in data.items() if v != defaults[k] and FIELD_PERMS.get(k) != "survey_edit"}
+    _require_fields(perms.granted(user), changed)
     s = Survey(**data, owner_id=user.id, status="draft")
     _check_dates(s)
     db.add(s)
@@ -180,8 +208,12 @@ def get_survey(survey_id: int, user: User = Depends(staff), db: Session = Depend
 
 @router.patch("/surveys/{survey_id}")
 def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    s = get_manageable_survey(db, user, survey_id)
+    s = get_viewable_survey(db, user, survey_id)
     data = body.model_dump(exclude_unset=True, exclude={"manager_ids"})
+    # the form sends every field: only the ones that really change need a permission
+    data = {k: v for k, v in data.items() if getattr(s, k) != v}
+    if data:
+        _require_fields(perms.survey_permissions(db, user, s), set(data))
     content_fields = {"title_uz", "title_ru", "description_uz", "description_ru"}
     for k, v in data.items():
         setattr(s, k, v)
@@ -212,9 +244,7 @@ def _validate_for_publish(db: Session, s: Survey) -> None:
 @router.post("/surveys/{survey_id}/publish")
 def publish_survey(survey_id: int, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     """Publish the survey (first time) or publish pending changes as a new version."""
-    s = get_manageable_survey(db, user, survey_id)
-    if not can_publish(user):
-        raise ApiError(403, "no_publish_right")
+    s = get_survey_for(db, user, survey_id, "publish")
     _validate_for_publish(db, s)
     v = publish(db, s, user)
     audit.log(db, user, "survey.publish", "survey", s.id, version=v.number)
@@ -224,9 +254,7 @@ def publish_survey(survey_id: int, user: User = Depends(admin_only), db: Session
 
 @router.post("/surveys/{survey_id}/status")
 def set_status(survey_id: int, body: StatusIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    s = get_manageable_survey(db, user, survey_id)
-    if body.status == "active" and not can_publish(user):
-        raise ApiError(403, "no_publish_right")
+    s = get_survey_for(db, user, survey_id, "publish")
     if body.status == "active" and s.published_version_id is None:
         _validate_for_publish(db, s)
         publish(db, s, user)
@@ -239,7 +267,7 @@ def set_status(survey_id: int, body: StatusIn, user: User = Depends(admin_only),
 @router.delete("/surveys/{survey_id}")
 def delete_survey(survey_id: int, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     """Soft delete: the survey is hidden but its answers stay in the database."""
-    s = get_manageable_survey(db, user, survey_id)
+    s = get_survey_for(db, user, survey_id, "survey_delete")
     s.deleted_at = utcnow()
     if s.status == "active":
         s.status = "paused"
@@ -250,7 +278,8 @@ def delete_survey(survey_id: int, user: User = Depends(admin_only), db: Session 
 
 @router.post("/surveys/{survey_id}/duplicate")
 def duplicate_survey(survey_id: int, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    src = get_manageable_survey(db, user, survey_id)
+    perms.require(user, "survey_create")
+    src = get_viewable_survey(db, user, survey_id)
     copy = Survey(
         title_uz=f"{src.title_uz} (nusxa)" if src.title_uz else "",
         title_ru=f"{src.title_ru} (копия)" if src.title_ru else "",
@@ -337,11 +366,11 @@ def _renumber(db: Session, survey_id: int) -> None:
         q.position = i
 
 
-def _get_question(db: Session, user: User, question_id: int) -> tuple[Question, Survey]:
+def _get_question(db: Session, user: User, question_id: int, perm: str = "question_manage") -> tuple[Question, Survey]:
     q = db.get(Question, question_id)
     if q is None or q.deleted_at is not None:
         raise ApiError(404, "not_found")
-    return q, get_manageable_survey(db, user, q.survey_id)
+    return q, get_survey_for(db, user, q.survey_id, perm)
 
 
 @router.get("/surveys/{survey_id}/questions")
@@ -352,7 +381,9 @@ def list_questions(survey_id: int, user: User = Depends(staff), db: Session = De
 
 @router.post("/surveys/{survey_id}/questions")
 def create_question(survey_id: int, body: QuestionIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    s = get_manageable_survey(db, user, survey_id)
+    s = get_survey_for(db, user, survey_id, "question_manage")
+    if body.image_url.strip():
+        perms.require_on(db, user, s, "media_manage")
     questions = live_questions(db, s.id)
     pos = len(questions) if body.position is None else max(0, min(body.position, len(questions)))
     for other in questions:
@@ -371,6 +402,16 @@ def create_question(survey_id: int, body: QuestionIn, user: User = Depends(admin
 @router.put("/questions/{question_id}")
 def update_question(question_id: int, body: QuestionIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     q, s = _get_question(db, user, question_id)
+    allowed = perms.survey_permissions(db, user, s)
+    if body.qtype != q.qtype and "question_type" not in allowed:
+        raise ApiError(403, "no_permission")
+    if body.image_url.strip() != q.image_url and "media_manage" not in allowed:
+        raise ApiError(403, "no_permission")
+    if body.qtype in CHOICE_TYPES and "option_manage" not in allowed:
+        current = {o.id for o in live_options(db, q.id)}
+        sent = {o.id for o in body.options if o.id}
+        if sent != current or any(not o.id for o in body.options):
+            raise ApiError(403, "no_permission")
     _apply_question(db, q, body)
     mark_changed(s)
     audit.log(db, user, "question.update", "question", q.id, survey_id=s.id)
@@ -449,7 +490,7 @@ def move_question(question_id: int, body: MoveIn, user: User = Depends(admin_onl
 
 @router.post("/surveys/{survey_id}/questions/reorder")
 def reorder_questions(survey_id: int, body: ReorderIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    s = get_manageable_survey(db, user, survey_id)
+    s = get_survey_for(db, user, survey_id, "question_manage")
     questions = {q.id: q for q in live_questions(db, s.id)}
     if set(body.question_ids) != set(questions):
         raise ApiError(422, "invalid_answer")
@@ -466,6 +507,7 @@ def reorder_questions(survey_id: int, body: ReorderIn, user: User = Depends(admi
 @router.post("/uploads")
 async def upload_image(file: UploadFile = File(...), user: User = Depends(admin_only), db: Session = Depends(get_db)):
     """Picture for a question. Kept in the database so it survives restarts and redeploys."""
+    perms.require(user, "media_manage")
     max_bytes = get_settings().max_upload_mb * 1024 * 1024
     data = await file.read(max_bytes + 1)
     ext = files.validate_image(data, max_bytes)

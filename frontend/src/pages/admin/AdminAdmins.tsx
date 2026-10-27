@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { useApp } from '../../app-context'
-import { Button, Card, ConfirmDialog, ErrorBox, Input, Label, Modal, Spinner, Toggle } from '../../components/ui'
+import { Button, Card, ConfirmDialog, ErrorBox, Input, Label, Modal, Segmented, Select, Spinner } from '../../components/ui'
 import { useLoad } from '../../hooks'
 import { formatDate, pick } from '../../i18n'
+import { PERMISSIONS, type AccessLevel, type Perm } from '../../permissions'
 import type { AdminRow, AdminStatus, AdminSurvey, StaffRole } from '../../types'
 
 const STAFF_ROLES: StaffRole[] = ['admin', 'analyst', 'super_admin']
@@ -22,6 +23,17 @@ const ROLE_CLS: Record<StaffRole, string> = {
 }
 
 type DialogMode = 'add' | 'edit' | 'rights'
+type PermMap = Record<Perm, boolean>
+type TemplateName = 'full' | 'create_edit' | 'view_stats'
+
+interface AdminsPage {
+  items: AdminRow[]
+  templates: Record<TemplateName, PermMap>
+  analyst_permissions: Perm[]
+}
+
+const LEVELS: AccessLevel[] = ['view', 'edit', 'full']
+const TEMPLATE_NAMES: TemplateName[] = ['full', 'create_edit', 'view_stats']
 
 interface Lookup {
   exists: boolean
@@ -35,7 +47,7 @@ interface Lookup {
 
 export default function AdminAdmins() {
   const { t, showError, toast, errorText } = useApp()
-  const { data, error, loading, reload } = useLoad(() => api.get<{ items: AdminRow[] }>('/api/admin/admins'))
+  const { data, error, loading, reload } = useLoad(() => api.get<AdminsPage>('/api/admin/admins'))
   const surveys = useLoad(() => api.get<AdminSurvey[]>('/api/admin/surveys'))
   const [dialog, setDialog] = useState<{ mode: DialogMode; admin: AdminRow | null } | null>(null)
   const [confirm, setConfirm] = useState<{ kind: 'suspend' | 'remove'; admin: AdminRow } | null>(null)
@@ -106,11 +118,12 @@ export default function AdminAdmins() {
         </div>
       )}
 
-      {dialog && (
+      {dialog && data && (
         <AdminDialog
           mode={dialog.mode}
           admin={dialog.admin}
           surveys={surveys.data ?? []}
+          page={data}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null)
@@ -169,10 +182,10 @@ function NameCell({ a }: { a: AdminRow }) {
 function RightsSummary({ a }: { a: AdminRow }) {
   const { t } = useApp()
   if (a.role === 'super_admin') return null
-  const parts = [a.all_surveys ? t('allSurveysShort') : t('someSurveysShort', { n: a.survey_ids.length })]
+  const parts = [a.all_surveys ? `${t('allSurveysShort')} (${t(`level_${a.all_surveys_level}`)})` : t('someSurveysShort', { n: a.surveys.length })]
   if (a.role === 'admin' && a.owned_surveys) parts.push(t('ownSurveys', { n: a.owned_surveys }))
-  if (a.role === 'admin' && !a.can_publish) parts.push(t('noPublishShort'))
-  if (!a.can_export) parts.push(t('noExportShort'))
+  const shown = a.role === 'analyst' ? (['results_view', 'export'] as Perm[]) : PERMISSIONS
+  parts.push(t('permCount', { n: shown.filter((p) => a.permissions[p]).length, total: shown.length }))
   return <div className="text-xs text-muted">⚙️ {parts.join(' · ')}</div>
 }
 
@@ -283,12 +296,14 @@ function AdminDialog({
   mode,
   admin,
   surveys,
+  page,
   onClose,
   onSaved,
 }: {
   mode: DialogMode
   admin: AdminRow | null
   surveys: AdminSurvey[]
+  page: AdminsPage
   onClose: () => void
   onSaved: () => void
 }) {
@@ -298,9 +313,10 @@ function AdminDialog({
   const [role, setRole] = useState<StaffRole>(admin?.role ?? 'admin')
   const [allSurveys, setAllSurveys] = useState(admin?.all_surveys ?? false)
   const [allTouched, setAllTouched] = useState(!!admin)
-  const [canExport, setCanExport] = useState(admin?.can_export ?? true)
-  const [canPublish, setCanPublish] = useState(admin?.can_publish ?? true)
-  const [surveyIds, setSurveyIds] = useState<number[]>(admin?.survey_ids ?? [])
+  const [allLevel, setAllLevel] = useState<AccessLevel>(admin?.all_surveys_level ?? 'full')
+  const [perms, setPerms] = useState<PermMap>((admin?.permissions as PermMap) ?? page.templates.full)
+  const [permsTouched, setPermsTouched] = useState(!!admin)
+  const [levels, setLevels] = useState<Record<number, AccessLevel>>(Object.fromEntries((admin?.surveys ?? []).map((x) => [x.id, x.level])))
   const [lookup, setLookup] = useState<Lookup | 'checking' | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmSuper, setConfirmSuper] = useState(false)
@@ -313,6 +329,9 @@ function AdminDialog({
   useEffect(() => {
     if (!allTouched) setAllSurveys(role === 'analyst')
   }, [role, allTouched])
+  useEffect(() => {
+    if (!permsTouched) setPerms(role === 'analyst' ? page.templates.view_stats : page.templates.full)
+  }, [role, permsTouched, page.templates])
 
   useEffect(() => {
     if (mode !== 'add' || !tidValid) {
@@ -344,7 +363,12 @@ function AdminDialog({
     if (mode === 'add' && !tidValid) return toast(t('invalidTelegramId'), 'error')
     setSaving(true)
     try {
-      const rights = { all_surveys: allSurveys, can_export: canExport, can_publish: canPublish, survey_ids: allSurveys ? [] : surveyIds }
+      const rights = {
+        all_surveys: allSurveys,
+        all_surveys_level: role === 'analyst' ? 'view' : allLevel,
+        permissions: perms,
+        surveys: allSurveys ? [] : Object.entries(levels).map(([id, level]) => ({ id: Number(id), level: role === 'analyst' ? 'view' : level })),
+      }
       if (mode === 'add') {
         const res = await api.post<AdminRow>('/api/admin/admins', { telegram_id: Number(tid.trim()), name: name.trim(), role, ...rights })
         toast(res.status === 'pending' ? t('adminAddedPending') : t('adminAdded'))
@@ -462,46 +486,27 @@ function AdminDialog({
         {mode !== 'edit' && role === 'super_admin' && <p className="rounded-xl bg-navy-50 p-3 text-sm text-muted dark:bg-white/5">{t('permSuperAll')}</p>}
 
         {showRights && (
-          <div>
-            {mode === 'add' && <div className="mb-2 mt-2 text-lg font-bold">{t('permissions')}</div>}
-            <div className="space-y-2">
-              <Toggle
-                checked={allSurveys}
-                onChange={(v) => {
-                  setAllTouched(true)
-                  setAllSurveys(v)
-                }}
-                label={t('permAllSurveys')}
-              />
-              {!allSurveys && (
-                <div className="rounded-xl border-2 border-line bg-card p-3">
-                  <div className="mb-2 text-sm text-muted">{role === 'admin' ? t('permSurveysAdmin') : t('permSurveysAnalyst')}</div>
-                  {surveys.length === 0 && <div className="text-sm text-muted">{t('noSurveysYet')}</div>}
-                  <div className="space-y-1">
-                    {surveys.map((s) => {
-                      const on = surveyIds.includes(s.id)
-                      return (
-                        <label
-                          key={s.id}
-                          className="flex min-h-[40px] cursor-pointer items-center gap-3 rounded-lg px-1 hover:bg-black/5 dark:hover:bg-white/5"
-                        >
-                          <input
-                            type="checkbox"
-                            className="h-5 w-5 accent-[#16a34a]"
-                            checked={on}
-                            onChange={() => setSurveyIds(on ? surveyIds.filter((x) => x !== s.id) : [...surveyIds, s.id])}
-                          />
-                          <span className="text-[15px]">{pick(s, 'title', lang)}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {role === 'admin' && <Toggle checked={canPublish} onChange={setCanPublish} label={t('permPublish')} />}
-              <Toggle checked={canExport} onChange={setCanExport} label={t('permExport')} />
-            </div>
-          </div>
+          <RightsEditor
+            role={role}
+            page={page}
+            surveys={surveys}
+            others={page.items.filter((x) => x.id !== admin?.id && x.role !== 'super_admin')}
+            perms={perms}
+            setPerms={(p) => {
+              setPermsTouched(true)
+              setPerms(p)
+            }}
+            allSurveys={allSurveys}
+            setAllSurveys={(v) => {
+              setAllTouched(true)
+              setAllSurveys(v)
+            }}
+            allLevel={allLevel}
+            setAllLevel={setAllLevel}
+            levels={levels}
+            setLevels={setLevels}
+            showTitle={mode === 'add'}
+          />
         )}
       </Modal>
       <ConfirmDialog
@@ -515,5 +520,178 @@ function AdminDialog({
         }}
       />
     </>
+  )
+}
+
+function RightsEditor({
+  role,
+  page,
+  surveys,
+  others,
+  perms,
+  setPerms,
+  allSurveys,
+  setAllSurveys,
+  allLevel,
+  setAllLevel,
+  levels,
+  setLevels,
+  showTitle,
+}: {
+  role: StaffRole
+  page: AdminsPage
+  surveys: AdminSurvey[]
+  others: AdminRow[]
+  perms: PermMap
+  setPerms: (p: PermMap) => void
+  allSurveys: boolean
+  setAllSurveys: (v: boolean) => void
+  allLevel: AccessLevel
+  setAllLevel: (v: AccessLevel) => void
+  levels: Record<number, AccessLevel>
+  setLevels: (v: Record<number, AccessLevel>) => void
+  showTitle: boolean
+}) {
+  const { t, lang, toast } = useApp()
+  const analyst = role === 'analyst'
+  const shown: readonly Perm[] = analyst ? page.analyst_permissions : PERMISSIONS
+  const active = TEMPLATE_NAMES.find((n) => shown.every((p) => !!page.templates[n][p] === !!perms[p]))
+
+  const copy = (id: string) => {
+    const src = others.find((x) => String(x.id) === id)
+    if (!src) return
+    setPerms({ ...(src.permissions as PermMap) })
+    setAllSurveys(src.all_surveys)
+    setAllLevel(src.all_surveys_level)
+    setLevels(Object.fromEntries(src.surveys.map((x) => [x.id, x.level])))
+    toast(t('copied'))
+  }
+
+  return (
+    <div className="space-y-5">
+      {showTitle && <div className="mt-2 text-lg font-bold">{t('permissions')}</div>}
+
+      {!analyst && (
+        <div>
+          <Label>{t('permTemplate')}</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {TEMPLATE_NAMES.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPerms({ ...page.templates[n] })}
+                className={`min-h-[44px] rounded-xl border-2 px-2 text-sm font-semibold ${active === n ? 'border-brand-500 bg-brand-50 dark:bg-brand-700/20' : 'border-line bg-card'}`}
+              >
+                {t(`tpl_${n}`)}
+              </button>
+            ))}
+            <div
+              className={`flex min-h-[44px] items-center justify-center rounded-xl border-2 px-2 text-sm font-semibold ${!active ? 'border-brand-500 bg-brand-50 dark:bg-brand-700/20' : 'border-dashed border-line text-muted'}`}
+            >
+              {t('tpl_custom')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {others.length > 0 && (
+        <div>
+          <Label>{t('copyFrom')}</Label>
+          <Select value="" onChange={(e) => copy(e.target.value)}>
+            <option value="">{t('copyFromPlaceholder')}</option>
+            {others.map((o) => (
+              <option key={o.id} value={o.id}>
+                {displayName(o)} · {t(`role_${o.role}`)}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
+      <div>
+        <Label>{t('permissions')}</Label>
+        {analyst && <p className="mb-2 text-sm text-muted">{t('analystPermsHint')}</p>}
+        <div className="divide-y divide-line overflow-hidden rounded-xl border-2 border-line bg-card">
+          {shown.map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="switch"
+              aria-checked={!!perms[p]}
+              onClick={() => setPerms({ ...perms, [p]: !perms[p] })}
+              className="flex min-h-[50px] w-full items-center justify-between gap-3 px-3.5 py-2 text-left"
+            >
+              <span className="text-[15px] font-medium">{t(`perm_${p}`)}</span>
+              <span
+                className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${
+                  perms[p]
+                    ? 'bg-brand-100 text-brand-700 dark:bg-brand-700/30 dark:text-brand-100'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200'
+                }`}
+              >
+                {perms[p] ? t('permOn') : t('permOff')}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Label>{t('surveyScope')}</Label>
+        <Segmented
+          value={allSurveys ? 'all' : 'some'}
+          onChange={(v) => setAllSurveys(v === 'all')}
+          options={[
+            { value: 'all', label: t('scopeAll') },
+            { value: 'some', label: t('scopeSelected') },
+          ]}
+        />
+        {!analyst && <p className="mt-2 text-sm leading-relaxed text-muted">{t('levelHint')}</p>}
+        {allSurveys && !analyst && (
+          <div className="mt-3">
+            <Label>{t('levelForAll')}</Label>
+            <Select value={allLevel} onChange={(e) => setAllLevel(e.target.value as AccessLevel)}>
+              {LEVELS.map((lv) => (
+                <option key={lv} value={lv}>
+                  {t(`level_${lv}`)}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {!allSurveys && (
+          <div className="mt-3 space-y-2">
+            {surveys.length === 0 && <div className="text-sm text-muted">{t('noSurveysYet')}</div>}
+            {surveys.map((sv) => {
+              const lv = levels[sv.id]
+              const setLv = (v: string) => {
+                const next = { ...levels }
+                if (v) next[sv.id] = v as AccessLevel
+                else delete next[sv.id]
+                setLevels(next)
+              }
+              return analyst ? (
+                <label key={sv.id} className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-xl border-2 border-line bg-card px-3">
+                  <input type="checkbox" className="h-5 w-5 accent-[#16a34a]" checked={!!lv} onChange={() => setLv(lv ? '' : 'view')} />
+                  <span className="text-[15px]">{pick(sv, 'title', lang)}</span>
+                </label>
+              ) : (
+                <div key={sv.id} className={`rounded-xl border-2 p-2.5 ${lv ? 'border-brand-500' : 'border-line'} bg-card`}>
+                  <div className="mb-1.5 text-[15px] font-medium">{pick(sv, 'title', lang)}</div>
+                  <Select value={lv ?? ''} onChange={(e) => setLv(e.target.value)} className="!py-2">
+                    <option value="">{t('level_none')}</option>
+                    {LEVELS.map((x) => (
+                      <option key={x} value={x}>
+                        {t(`level_${x}`)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
