@@ -37,6 +37,7 @@ L = {
         "phone": "Telefon",
         "st_completed": "Yakunlangan",
         "st_in_progress": "Jarayonda",
+        "st_timed_out": "Vaqt tugagan",
         "anonymous": "Anonim",
         "row": "Qator",
         "avg_place": "O'rtacha o'rin",
@@ -64,6 +65,7 @@ L = {
         "phone": "Телефон",
         "st_completed": "Завершена",
         "st_in_progress": "В процессе",
+        "st_timed_out": "Время истекло",
         "anonymous": "Анонимно",
         "row": "Строка",
         "avg_place": "Среднее место",
@@ -177,7 +179,7 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     for n, resp in enumerate(responses, 1):
         row = [
             n,
-            t["st_completed"] if resp.status == "completed" else t["st_in_progress"],
+            t.get(f"st_{resp.status}", t["st_in_progress"]),
             resp.started_at.astimezone(tz).strftime("%Y-%m-%d %H:%M") if resp.started_at else "",
             resp.completed_at.astimezone(tz).strftime("%Y-%m-%d %H:%M") if resp.completed_at else "",
             versions.get(resp.version_id, ""),

@@ -16,7 +16,8 @@ interface Respondent {
 }
 interface Row {
   id: number
-  status: 'completed' | 'in_progress'
+  status: 'completed' | 'in_progress' | 'timed_out'
+  timed_out?: boolean
   started_at: string
   completed_at: string | null
   version_number: number
@@ -42,7 +43,8 @@ interface Detail {
 export default function AdminResponses() {
   const { id } = useParams()
   const { t, lang, me, errorText, showError } = useApp()
-  const [status, setStatus] = useState<'' | 'completed' | 'in_progress'>('')
+  const statusLabel = (st: Row['status']) => (st === 'completed' ? t('completed') : st === 'timed_out' ? t('timedOut') : t('inProgress'))
+  const [status, setStatus] = useState<'' | 'completed' | 'in_progress' | 'timed_out'>('')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
@@ -90,13 +92,13 @@ export default function AdminResponses() {
         </Button>
       )}
       <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto">
-        {(['', 'completed', 'in_progress'] as const).map((s) => (
+        {(['', 'completed', 'in_progress', 'timed_out'] as const).map((s) => (
           <button
             key={s}
             onClick={() => changeStatus(s)}
             className={`min-h-[38px] shrink-0 rounded-full px-4 text-sm font-semibold ${status === s ? 'bg-navy-800 text-white dark:bg-navy-500' : 'bg-card ring-1 ring-line'}`}
           >
-            {s === '' ? t('all') : s === 'completed' ? t('completed') : t('inProgress')}
+            {s === '' ? t('all') : statusLabel(s)}
           </button>
         ))}
         <span className="ml-auto self-center whitespace-nowrap text-sm text-muted">Σ {total}</span>
@@ -122,10 +124,13 @@ export default function AdminResponses() {
                 className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
                   r.status === 'completed'
                     ? 'bg-brand-100 text-brand-700 dark:bg-brand-700/30 dark:text-brand-100'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                    : r.status === 'timed_out'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-200'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
                 }`}
               >
-                {r.status === 'completed' ? t('completed') : t('inProgress')}
+                {statusLabel(r.status)}
+                {r.timed_out && r.status === 'completed' && ' ⏰'}
               </span>
             </div>
           </Card>

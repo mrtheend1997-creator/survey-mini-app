@@ -255,6 +255,7 @@ export default function AdminResults() {
         <KpiCard label={t('participants')} value={data.participants} />
         <KpiCard label={t('completed')} value={data.completed} accent="green" />
         <KpiCard label={t('inProgress')} value={data.in_progress} />
+        {!!data.timed_out && <KpiCard label={t('timedOut')} value={data.timed_out} />}
         <KpiCard label={t('completionRate')} value={`${data.completion_rate}%`} accent="green" />
       </div>
 

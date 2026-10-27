@@ -2,6 +2,7 @@
 
 import re
 import secrets
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select
@@ -12,7 +13,7 @@ from ..db import get_db
 from ..errors import ApiError
 from ..models import Answer, AppSetting, Participation, Region, Response, StoredFile, Survey, SurveyVersion, User, utcnow
 from ..schemas import AnswerIn, MeUpdate, ProgressIn, StartIn
-from ..services import files
+from ..services import files, timing
 from ..services import permissions as perms
 from ..services.answers import Context, normalize, problem
 from ..services.surveys import effective_status, estimated_minutes, is_open, today
@@ -62,16 +63,16 @@ def public_settings(db: Session = Depends(get_db), _: User = Depends(get_current
 
 
 def _participation_state(db: Session, user: User, survey: Survey) -> dict:
-    p = db.scalar(
-        select(Participation).where(
-            Participation.survey_id == survey.id, Participation.user_id == user.id
+    state = timing.attempts_state(db, survey, user.id)
+    # a submitted response that may still be changed (named surveys with editing allowed)
+    state["can_edit"] = bool(
+        survey.allow_edit
+        and survey.survey_type != "anonymous"
+        and db.scalar(
+            select(Response.id).where(Response.survey_id == survey.id, Response.user_id == user.id, Response.status == "completed")
         )
     )
-    completed = bool(p and p.completed_count > 0)
-    return {
-        "completed": completed,
-        "can_start": not completed or survey.allow_repeat,
-    }
+    return state
 
 
 def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion) -> dict:
@@ -86,9 +87,13 @@ def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion
         "estimated_minutes": estimated_minutes(survey, qcount),
         "start_date": survey.start_date,
         "end_date": survey.end_date,
+        "closes_at": survey.closes_at,
         "status": effective_status(survey),
         "survey_type": survey.survey_type,
         "allow_repeat": survey.allow_repeat,
+        "time_limit_minutes": survey.time_limit_minutes,
+        "timeout_policy": survey.timeout_policy,
+        "allow_edit": survey.allow_edit and survey.survey_type != "anonymous",
         **_participation_state(db, user, survey),
     }
 
@@ -124,13 +129,21 @@ def get_survey(survey_id: int, user: User = Depends(get_current_user), db: Sessi
 def _response_payload(db: Session, resp: Response) -> dict:
     version = db.get(SurveyVersion, resp.version_id)
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == resp.id))}
+    questions = version.snapshot.get("questions", [])
     return {
         "token": resp.token,
         "status": resp.status,
         "current_index": resp.current_index,
         "version_id": resp.version_id,
-        "questions": version.snapshot.get("questions", []),
+        "questions": questions,
         "answers": {str(k): v for k, v in answers.items()},
+        # counted by the server; the app only shows the countdown
+        "remaining_seconds": timing.remaining_seconds(resp),
+        "question_time_left": {
+            str(q["id"]): timing.question_left(resp, q) for q in questions if q.get("time_limit_seconds") and timing.question_started(resp, q["id"])
+        },
+        "editing": resp.completed_at is not None,
+        "timed_out": resp.timed_out,
     }
 
 
@@ -171,13 +184,42 @@ def start_or_resume(
             )
             .order_by(Response.id.desc())
         )
+    if existing is not None and timing.is_overdue(existing):
+        # its time ran out while the app was closed
+        timing.time_out(db, survey, existing, user.id)
+        db.commit()
+        return _response_payload(db, existing)
     if existing is not None and not body.restart:
         return _response_payload(db, existing)
+    if existing is not None and existing.completed_at is not None:
+        # "start over" while changing submitted answers: keep what was submitted
+        existing.status = "completed"
+        db.commit()
+        existing = None
 
-    # 2) start a new one
+    # 2) reopen the submitted response to change it
+    if body.edit:
+        if not survey.allow_edit or survey.survey_type == "anonymous":
+            raise ApiError(409, "edit_not_allowed")
+        done = db.scalar(
+            select(Response)
+            .where(Response.survey_id == survey.id, Response.user_id == user.id, Response.status == "completed")
+            .order_by(Response.id.desc())
+        )
+        if done is None:
+            raise ApiError(409, "edit_not_allowed")
+        done.status = "in_progress"
+        done.deadline_at = None  # changing submitted answers isn't timed
+        done.current_index = 0
+        db.commit()
+        return _response_payload(db, done)
+
+    # 3) start a new one
     state = _participation_state(db, user, survey)
     if not state["can_start"]:
-        raise ApiError(409, "already_completed")
+        if state["locked"]:
+            raise ApiError(409, "attempts_locked")
+        raise ApiError(409, "already_completed" if state["attempts_limit"] == 1 else "attempts_used")
 
     info: dict = {}
     if survey.survey_type == "registered":
@@ -199,12 +241,10 @@ def start_or_resume(
         token=secrets.token_urlsafe(32),
         language=body.language,
         respondent_info=info,
+        deadline_at=utcnow() + timedelta(minutes=survey.time_limit_minutes) if survey.time_limit_minutes else None,
     )
     db.add(resp)
-    if db.scalar(
-        select(Participation.id).where(Participation.survey_id == survey.id, Participation.user_id == user.id)
-    ) is None:
-        db.add(Participation(survey_id=survey.id, user_id=user.id, completed_count=0))
+    timing.participation(db, survey.id, user.id, create=True)
     db.commit()
     return _response_payload(db, resp)
 
@@ -214,6 +254,40 @@ def _get_own_response(db: Session, user: User, token: str) -> Response:
     if resp is None or (resp.user_id is not None and resp.user_id != user.id):
         raise ApiError(404, "not_found")
     return resp
+
+
+def _live_response(db: Session, user: User, token: str) -> Response:
+    """The respondent's unfinished response; closes it first if its time has run out."""
+    resp = _get_own_response(db, user, token)
+    if resp.status != "in_progress":
+        raise ApiError(409, "time_over" if resp.timed_out else "response_completed", {"status": resp.status})
+    if timing.is_overdue(resp):
+        survey = db.get(Survey, resp.survey_id)
+        timing.time_out(db, survey, resp, user.id)
+        db.commit()
+        raise ApiError(409, "time_over", {"status": resp.status})
+    return resp
+
+
+@router.post("/responses/{token}/questions/{question_id}/open")
+def open_timed_question(token: str, question_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The respondent sees a question with its own time limit: its clock starts now (once)."""
+    resp = _live_response(db, user, token)
+    q = _question(db, resp, question_id)
+    if q.get("time_limit_seconds"):
+        timing.open_question(resp, question_id)
+        db.commit()
+    return {"time_left": timing.question_left(resp, q), "remaining_seconds": timing.remaining_seconds(resp)}
+
+
+@router.post("/responses/{token}/timeout")
+def report_timeout(token: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The countdown on the screen reached zero. The server checks its own clock before acting."""
+    resp = _get_own_response(db, user, token)
+    if resp.status == "in_progress" and resp.deadline_at is not None and utcnow() >= timing.aware(resp.deadline_at) - timedelta(seconds=2):
+        timing.time_out(db, db.get(Survey, resp.survey_id), resp, user.id)
+        db.commit()
+    return {"status": resp.status, "timed_out": resp.timed_out, "remaining_seconds": timing.remaining_seconds(resp)}
 
 
 def _question(db: Session, resp: Response, question_id: int) -> dict:
@@ -233,10 +307,12 @@ def save_answer(
     db: Session = Depends(get_db),
 ):
     """Autosave one answer. Called every time the respondent changes something."""
-    resp = _get_own_response(db, user, token)
-    if resp.status != "in_progress":
-        raise ApiError(409, "response_completed")
+    resp = _live_response(db, user, token)
     q = _question(db, resp, question_id)
+    if timing.question_over(resp, q):
+        raise ApiError(409, "question_time_over")
+    if q.get("time_limit_seconds"):
+        timing.open_question(resp, question_id)
     value = normalize(q, body.value, answer_context(db, resp, q))
     answer = db.scalar(select(Answer).where(Answer.response_id == resp.id, Answer.question_id == question_id))
     if value is None:
@@ -282,9 +358,7 @@ async def upload_answer_file(
     The file is checked by its content, kept in the database (survives redeploys) and can only be
     downloaded by staff who may see this survey's results.
     """
-    resp = _get_own_response(db, user, token)
-    if resp.status != "in_progress":
-        raise ApiError(409, "response_completed")
+    resp = _live_response(db, user, token)
     q = _question(db, resp, question_id)
     if q["qtype"] != "file":
         raise ApiError(422, "invalid_answer")
@@ -337,7 +411,13 @@ def submit(token: str, user: User = Depends(get_current_user), db: Session = Dep
     if resp is None or (resp.user_id is not None and resp.user_id != user.id):
         raise ApiError(404, "not_found")
     if resp.status == "completed":
-        return {"ok": True, "already": True}
+        return {"ok": True, "already": True, "status": resp.status}
+    survey = db.get(Survey, resp.survey_id)
+    if resp.status == "timed_out" or timing.is_overdue(resp):
+        if resp.status == "in_progress":
+            timing.time_out(db, survey, resp, user.id)
+            db.commit()
+        return {"ok": resp.status == "completed", "already": False, "status": resp.status, "timed_out": True}
 
     version = db.get(SurveyVersion, resp.version_id)
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == resp.id))}
@@ -346,25 +426,17 @@ def submit(token: str, user: User = Depends(get_current_user), db: Session = Dep
     missing = []
     for idx, q in enumerate(questions):
         reason = problem(q, answers.get(q["id"]), ctx)
+        # a question whose own time ran out may stay unanswered
+        if reason == "required" and timing.question_over(resp, q):
+            continue
         if reason:
             missing.append({"question_id": q["id"], "index": idx, "reason": reason})
     if missing:
         raise ApiError(422, "required_missing", {"missing": missing})
 
-    now = utcnow()
-    resp.status = "completed"
-    resp.completed_at = now
-    p = db.scalar(
-        select(Participation).where(Participation.survey_id == resp.survey_id, Participation.user_id == user.id)
-    )
-    if p is None:
-        p = Participation(survey_id=resp.survey_id, user_id=user.id, completed_count=0)
-        db.add(p)
-    p.completed_count = (p.completed_count or 0) + 1
-    # anonymous: keep only the day, so the time can't be matched to the response
-    p.last_completed_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    timing.mark_completed(db, resp, user.id)
     db.commit()
-    return {"ok": True, "already": False}
+    return {"ok": True, "already": False, "status": resp.status}
 
 
 @router.get("/my/stats")

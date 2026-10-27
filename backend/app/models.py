@@ -93,6 +93,17 @@ class Survey(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     survey_type: Mapped[str] = mapped_column(String(20), default="anonymous")
     allow_repeat: Mapped[bool] = mapped_column(Boolean, default=False)
+    # availability window with time of day; start_date/end_date are kept in step for older code
+    opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # time for the whole survey; the server ends the response when it runs out
+    time_limit_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # what happens when the time runs out: submit / incomplete / lock (see services/timing.py)
+    timeout_policy: Mapped[str] = mapped_column(String(20), default="submit", server_default="submit")
+    # with allow_repeat: how many finished attempts are allowed (None = unlimited)
+    max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # named surveys only: a respondent may reopen and change a submitted response
+    allow_edit: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     estimated_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -152,6 +163,8 @@ class Question(Base):
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # type-specific settings (scale range, matrix rows, file formats...), see services/qtypes.py
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # seconds the respondent has for this question (None = no limit)
+    time_limit_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -223,6 +236,12 @@ class Response(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # set when the survey has a time limit; the server refuses answers after it
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # when each timed question was first shown: {"<question id>": "<iso time>"}
+    timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # finished by the server because the time ran out
+    timed_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     answers: Mapped[list["Answer"]] = relationship(cascade="all, delete-orphan")
 
@@ -250,6 +269,10 @@ class Participation(Base):
     survey_id: Mapped[int] = mapped_column(ForeignKey("surveys.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     completed_count: Mapped[int] = mapped_column(Integer, default=0)
+    # attempts that ended because the time ran out (count towards the attempts limit)
+    timed_out_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # "lock" timeout policy: no more attempts
+    locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     last_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -23,7 +23,7 @@ from ..models import (
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
-from ..services import qtypes
+from ..services import qtypes, timing
 from ..services import permissions as perms
 from ..services.surveys import (
     can_manage,
@@ -69,6 +69,12 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "end_date": s.end_date,
         "survey_type": s.survey_type,
         "allow_repeat": s.allow_repeat,
+        "opens_at": timing.to_local(s.opens_at),
+        "closes_at": timing.to_local(s.closes_at),
+        "time_limit_minutes": s.time_limit_minutes,
+        "timeout_policy": s.timeout_policy,
+        "max_attempts": s.max_attempts,
+        "allow_edit": s.allow_edit,
         "status": s.status,
         "effective_status": effective_status(s),
         "estimated_minutes": s.estimated_minutes,
@@ -116,6 +122,7 @@ def question_out(db: Session, q: Question) -> dict:
         "video_url": q.video_url,
         "hidden": q.hidden,
         "settings": q.settings or {},
+        "time_limit_seconds": q.time_limit_seconds,
         "options": [
             {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
             for o in live_options(db, q.id)
@@ -137,9 +144,28 @@ def list_surveys(status: str | None = None, q: str | None = None, user: User = D
     return [survey_out(db, user, s) for s in db.scalars(query.order_by(Survey.updated_at.desc()))]
 
 
+def _sync_window(s: Survey, changed: set[str]) -> None:
+    """Keep the date-only and the date-and-time window fields in step, whichever was sent."""
+    if "opens_at" in changed:
+        s.opens_at = timing.from_local(s.opens_at)
+        s.start_date = s.opens_at.astimezone(timing.tz()).date() if s.opens_at else None
+    elif "start_date" in changed:
+        s.opens_at = timing.day_start(s.start_date) if s.start_date else None
+    if "closes_at" in changed:
+        s.closes_at = timing.from_local(s.closes_at)
+        s.end_date = s.closes_at.astimezone(timing.tz()).date() if s.closes_at else None
+    elif "end_date" in changed:
+        s.closes_at = timing.day_end(s.end_date) if s.end_date else None
+
+
 def _check_dates(s: Survey) -> None:
     if s.start_date and s.end_date and s.end_date < s.start_date:
         raise ApiError(422, "invalid_dates")
+    if s.opens_at and s.closes_at and timing.aware(s.closes_at) <= timing.aware(s.opens_at):
+        raise ApiError(422, "invalid_dates")
+    if s.allow_edit and s.survey_type == "anonymous":
+        # an anonymous response isn't linked to anyone, so nobody could reopen it
+        raise ApiError(422, "edit_needs_named")
 
 
 def _apply_managers(db: Session, user: User, survey: Survey, ids: list[int] | None) -> None:
@@ -164,8 +190,14 @@ FIELD_PERMS = {
     "estimated_minutes": "survey_edit",
     "start_date": "timer_manage",
     "end_date": "timer_manage",
+    "opens_at": "timer_manage",
+    "closes_at": "timer_manage",
+    "time_limit_minutes": "timer_manage",
+    "timeout_policy": "timer_manage",
     "survey_type": "anonymity_manage",
     "allow_repeat": "participants_manage",
+    "max_attempts": "participants_manage",
+    "allow_edit": "participants_manage",
 }
 
 
@@ -187,6 +219,7 @@ def create_survey(body: SurveyIn, user: User = Depends(admin_only), db: Session 
     changed = {k for k, v in data.items() if v != defaults[k] and FIELD_PERMS.get(k) != "survey_edit"}
     _require_fields(perms.granted(user), changed)
     s = Survey(**data, owner_id=user.id, status="draft")
+    _sync_window(s, {k for k, v in data.items() if v is not None})
     _check_dates(s)
     db.add(s)
     db.flush()
@@ -216,7 +249,10 @@ def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_
     s = get_viewable_survey(db, user, survey_id)
     data = body.model_dump(exclude_unset=True, exclude={"manager_ids"})
     # the form sends every field: only the ones that really change need a permission
-    data = {k: v for k, v in data.items() if getattr(s, k) != v}
+    for k in ("opens_at", "closes_at"):
+        if k in data:
+            data[k] = timing.from_local(data[k])
+    data = {k: v for k, v in data.items() if (timing.aware(getattr(s, k)) if k in ("opens_at", "closes_at") else getattr(s, k)) != v}
     if data:
         _require_fields(perms.survey_permissions(db, user, s), set(data))
     content_fields = {"title_uz", "title_ru", "description_uz", "description_ru"}
@@ -224,6 +260,7 @@ def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_
         setattr(s, k, v)
     if not (s.title_uz.strip() or s.title_ru.strip()):
         raise ApiError(422, "title_required")
+    _sync_window(s, set(data))
     _check_dates(s)
     _apply_managers(db, user, s, body.manager_ids)
     if content_fields & data.keys():
@@ -303,6 +340,12 @@ def duplicate_survey(survey_id: int, user: User = Depends(admin_only), db: Sessi
         survey_type=src.survey_type,
         allow_repeat=src.allow_repeat,
         estimated_minutes=src.estimated_minutes,
+        opens_at=src.opens_at,
+        closes_at=src.closes_at,
+        time_limit_minutes=src.time_limit_minutes,
+        timeout_policy=src.timeout_policy,
+        max_attempts=src.max_attempts,
+        allow_edit=src.allow_edit,
         owner_id=user.id,
         status="draft",
     )
@@ -380,6 +423,7 @@ def _apply_question(db: Session, q: Question, body: QuestionIn) -> None:
     q.image_url = body.image_url.strip()
     q.video_url = _check_video(body.video_url)
     q.hidden = body.hidden
+    q.time_limit_seconds = body.time_limit_seconds if body.qtype not in qtypes.NO_ANSWER_TYPES else None
     q.allow_other = body.allow_other if body.qtype in qtypes.OTHER_TYPES else False
     q.min_choices = body.min_choices if multi else None
     q.max_choices = body.max_choices if multi else None
@@ -422,6 +466,8 @@ def create_question(survey_id: int, body: QuestionIn, user: User = Depends(admin
     s = get_survey_for(db, user, survey_id, "question_manage")
     if _media_changed(None, body, db):
         perms.require_on(db, user, s, "media_manage")
+    if body.time_limit_seconds:
+        perms.require_on(db, user, s, "timer_manage")
     questions = live_questions(db, s.id)
     pos = len(questions) if body.position is None else max(0, min(body.position, len(questions)))
     for other in questions:
@@ -444,6 +490,8 @@ def update_question(question_id: int, body: QuestionIn, user: User = Depends(adm
     if body.qtype != q.qtype and "question_type" not in allowed:
         raise ApiError(403, "no_permission")
     if _media_changed(q, body, db) and "media_manage" not in allowed:
+        raise ApiError(403, "no_permission")
+    if body.time_limit_seconds != q.time_limit_seconds and "timer_manage" not in allowed:
         raise ApiError(403, "no_permission")
     if "option_manage" not in allowed:
         if body.qtype in qtypes.OPTION_TYPES:
@@ -495,6 +543,7 @@ def _copy_question(db: Session, q: Question, survey_id: int, position: int) -> Q
         video_url=q.video_url,
         hidden=q.hidden,
         settings=dict(q.settings) if q.settings else None,
+        time_limit_seconds=q.time_limit_seconds,
     )
     db.add(nq)
     db.flush()

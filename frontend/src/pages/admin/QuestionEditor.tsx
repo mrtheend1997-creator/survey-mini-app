@@ -40,6 +40,7 @@ interface Draft {
   image_url: string
   video_url: string
   hidden: boolean
+  time_limit: string
   min_choices: string
   max_choices: string
   allow_other: boolean
@@ -67,6 +68,7 @@ function toDraft(q?: QuestionT | null): Draft {
     image_url: q?.image_url ?? '',
     video_url: q?.video_url ?? '',
     hidden: q?.hidden ?? false,
+    time_limit: q?.time_limit_seconds ? String(q.time_limit_seconds) : '',
     min_choices: q?.min_choices ? String(q.min_choices) : '',
     max_choices: q?.max_choices ? String(q.max_choices) : '',
     allow_other: q?.allow_other ?? false,
@@ -145,6 +147,7 @@ export default function QuestionEditor({
   const canType = !question || permissions.includes('question_type')
   const canOptions = !question || permissions.includes('option_manage')
   const canMedia = permissions.includes('media_manage')
+  const canTimer = permissions.includes('timer_manage')
   const pickTypes = QTYPE_GROUPS.map((g) => ({ ...g, types: g.types }))
   if (LEGACY_TYPES.includes(d.qtype)) pickTypes.push({ key: 'grpLegacy', types: [d.qtype] })
 
@@ -184,6 +187,7 @@ export default function QuestionEditor({
       image_url: d.image_url,
       video_url: d.video_url.trim(),
       hidden: d.hidden,
+      time_limit_seconds: d.qtype !== 'info' && d.time_limit ? Number(d.time_limit) : null,
       settings,
       min_choices: multi && d.min_choices ? Number(d.min_choices) : null,
       max_choices: multi && d.max_choices ? Number(d.max_choices) : null,
@@ -370,7 +374,7 @@ export default function QuestionEditor({
 
         <Bilingual label={t('hint')} multiline uz={d.hint_uz} ru={d.hint_ru} onUz={(v) => set('hint_uz', v)} onRu={(v) => set('hint_ru', v)} />
 
-        <details className="rounded-2xl border border-line bg-card p-3" open={d.hidden || (!!d.video_url && d.qtype !== 'video')}>
+        <details className="rounded-2xl border border-line bg-card p-3" open={d.hidden || !!d.time_limit || (!!d.video_url && d.qtype !== 'video')}>
           <summary className="cursor-pointer select-none font-semibold">⚙️ {t('advanced')}</summary>
           <div className="mt-4 space-y-5">
             {d.qtype !== 'info' && d.qtype !== 'video' && (
@@ -403,6 +407,22 @@ export default function QuestionEditor({
               </div>
             )}
             {d.qtype !== 'video' && (canMedia || d.video_url) && <VideoField value={d.video_url} disabled={!canMedia} onChange={(v) => set('video_url', v)} />}
+            {d.qtype !== 'info' && (canTimer || d.time_limit) && (
+              <div>
+                <Label>⏱ {t('questionTimeLimit')}</Label>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={5}
+                  max={3600}
+                  disabled={!canTimer}
+                  placeholder={t('questionTimeLimitNone')}
+                  value={d.time_limit}
+                  onChange={(e) => set('time_limit', e.target.value)}
+                />
+                <p className="mt-1 text-sm text-muted">{t('questionTimeLimitHint')}</p>
+              </div>
+            )}
             <Toggle checked={d.hidden} onChange={(v) => set('hidden', v)} label={t('hideQuestion')} />
             {d.hidden && <p className="-mt-3 text-sm text-muted">{t('hideQuestionHint')}</p>}
           </div>
