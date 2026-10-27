@@ -4,6 +4,7 @@ import { api, ApiError } from './api'
 import { useApp } from './app-context'
 import { ErrorBox, Spinner } from './components/ui'
 import { Logo } from './components/Header'
+import { getItem } from './storage'
 import { tg } from './telegram'
 import type { Me } from './types'
 import Home from './pages/Home'
@@ -34,7 +35,7 @@ export default function App() {
       .then((m) => {
         setMe(m)
         // first visit: use the language stored in the profile
-        if (!localStorage.getItem('fti_lang') && m.language !== lang) setLang(m.language)
+        if (!getItem('fti_lang') && m.language !== lang) setLang(m.language)
       })
       .catch(setError)
   }

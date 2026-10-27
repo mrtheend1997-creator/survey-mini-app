@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Participation, Response, Survey, utcnow
+from ..models import Answer, Participation, Response, Survey, SurveyVersion, utcnow
+from . import logic
 
 POLICIES = ("submit", "incomplete", "lock")
 # network delay allowance: answers sent this long after the deadline are still accepted
@@ -110,6 +111,7 @@ def attempts_state(db: Session, survey: Survey, user_id: int) -> dict:
 def mark_completed(db: Session, resp: Response, user_id: int | None, when: datetime | None = None) -> None:
     """Count a finished response for the user (the first submit only, not later edits)."""
     first_time = resp.completed_at is None
+    drop_skipped(db, resp)
     resp.status = "completed"
     resp.completed_at = resp.completed_at or when or utcnow()
     if first_time and user_id is not None:
@@ -117,6 +119,18 @@ def mark_completed(db: Session, resp: Response, user_id: int | None, when: datet
         p.completed_count = (p.completed_count or 0) + 1
         # anonymous: keep only the day, so the time can't be matched to the response
         p.last_completed_at = resp.completed_at.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def drop_skipped(db: Session, resp: Response) -> None:
+    """Mark the questions the respondent's route skipped as not applicable and drop their answers."""
+    version = db.get(SurveyVersion, resp.version_id)
+    questions = version.snapshot.get("questions", []) if version else []
+    rows = list(db.scalars(select(Answer).where(Answer.response_id == resp.id)))
+    skipped = logic.not_applicable(questions, {a.question_id: a.value for a in rows})
+    for a in rows:
+        if a.question_id in skipped:
+            db.delete(a)
+    resp.skipped = skipped
 
 
 def time_out(db: Session, survey: Survey, resp: Response, user_id: int | None) -> None:

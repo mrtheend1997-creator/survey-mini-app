@@ -13,6 +13,8 @@ interface FormState {
   title_ru: string
   description_uz: string
   description_ru: string
+  thanks_uz: string
+  thanks_ru: string
   opens_at: string
   closes_at: string
   survey_type: SurveyType
@@ -34,6 +36,8 @@ const EMPTY: FormState = {
   title_ru: '',
   description_uz: '',
   description_ru: '',
+  thanks_uz: '',
+  thanks_ru: '',
   opens_at: '',
   closes_at: '',
   survey_type: 'anonymous',
@@ -101,6 +105,8 @@ export default function SurveyForm() {
       title_ru: s.title_ru,
       description_uz: s.description_uz,
       description_ru: s.description_ru,
+      thanks_uz: s.thanks_uz ?? '',
+      thanks_ru: s.thanks_ru ?? '',
       opens_at: s.opens_at ?? '',
       closes_at: s.closes_at ?? '',
       survey_type: s.survey_type,
@@ -125,6 +131,8 @@ export default function SurveyForm() {
       title_ru: form.title_ru,
       description_uz: form.description_uz,
       description_ru: form.description_ru,
+      thanks_uz: form.thanks_uz,
+      thanks_ru: form.thanks_ru,
       opens_at: form.opens_at || null,
       closes_at: form.closes_at || null,
       survey_type: form.survey_type,
@@ -232,6 +240,14 @@ export default function SurveyForm() {
             ru={form.description_ru}
             onUz={(v) => set('description_uz', v)}
             onRu={(v) => set('description_ru', v)}
+          />
+          <Bilingual
+            label={t('thanksMessage')}
+            multiline
+            uz={form.thanks_uz}
+            ru={form.thanks_ru}
+            onUz={(v) => set('thanks_uz', v)}
+            onRu={(v) => set('thanks_ru', v)}
           />
         </fieldset>
         <fieldset disabled={!allowed('timer_manage')} className="space-y-3 disabled:opacity-60">

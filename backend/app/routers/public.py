@@ -13,7 +13,7 @@ from ..db import get_db
 from ..errors import ApiError
 from ..models import Answer, AppSetting, Participation, Region, Response, StoredFile, Survey, SurveyVersion, User, utcnow
 from ..schemas import AnswerIn, MeUpdate, ProgressIn, StartIn
-from ..services import files, timing
+from ..services import files, logic, timing
 from ..services import permissions as perms
 from ..services.answers import Context, normalize, problem
 from ..services.surveys import effective_status, estimated_minutes, is_open, today
@@ -76,7 +76,7 @@ def _participation_state(db: Session, user: User, survey: Survey) -> dict:
 
 
 def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion) -> dict:
-    qcount = len(version.snapshot.get("questions", []))
+    qcount = sum(1 for q in version.snapshot.get("questions", []) if q["qtype"] != "section")
     return {
         "id": survey.id,
         "title_uz": survey.title_uz,
@@ -94,6 +94,8 @@ def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion
         "time_limit_minutes": survey.time_limit_minutes,
         "timeout_policy": survey.timeout_policy,
         "allow_edit": survey.allow_edit and survey.survey_type != "anonymous",
+        "thanks_uz": survey.thanks_uz,
+        "thanks_ru": survey.thanks_ru,
         **_participation_state(db, user, survey),
     }
 
@@ -423,8 +425,12 @@ def submit(token: str, user: User = Depends(get_current_user), db: Session = Dep
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == resp.id))}
     questions = version.snapshot.get("questions", [])
     ctx = Context(regions=region_parents(db) if any(q["qtype"] == "region" for q in questions) else {})
+    # questions the respondent's route skipped are not applicable: not required, answers dropped
+    on_route = set(logic.route(questions, answers))
     missing = []
     for idx, q in enumerate(questions):
+        if q["id"] not in on_route:
+            continue
         reason = problem(q, answers.get(q["id"]), ctx)
         # a question whose own time ran out may stay unanswered
         if reason == "required" and timing.question_over(resp, q):

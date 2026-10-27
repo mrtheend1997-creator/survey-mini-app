@@ -10,8 +10,10 @@ from fastapi.staticfiles import StaticFiles
 
 from . import telegram_bot
 from .config import get_settings
+from .db import SessionLocal
 from .errors import ApiError
-from .routers import admin_admins, admin_data, admin_regions, admin_surveys, admin_users, files, public
+from .services import importer
+from .routers import admin_admins, admin_data, admin_regions, admin_surveys, admin_users, client_log, files, public
 
 log = logging.getLogger("fti")
 settings = get_settings()
@@ -23,6 +25,13 @@ async def lifespan(_: FastAPI):
         log.warning("DEV_MODE is ON: requests without Telegram signature are accepted. Never use in production!")
     if not settings.bot_token:
         log.warning("BOT_TOKEN is not set: Telegram login will not work.")
+    if settings.seed_surveys:
+        try:
+            with SessionLocal() as db:
+                for sid in importer.seed_surveys(db):
+                    log.info("Created draft survey %s from the bundled questionnaire", sid)
+        except Exception:  # never block startup; the error is in the log
+            log.exception("Bundled questionnaire was not created")
     if settings.telegram_webhook:
         # in the background so a slow Telegram API never delays startup
         threading.Thread(target=telegram_bot.register_webhook, daemon=True).start()
@@ -46,6 +55,7 @@ app.include_router(admin_admins.router)
 app.include_router(admin_regions.router)
 app.include_router(telegram_bot.router)
 app.include_router(files.router)
+app.include_router(client_log.router)
 
 @app.get("/api/health")
 def health():

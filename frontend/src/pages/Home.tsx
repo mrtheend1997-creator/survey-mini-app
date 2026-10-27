@@ -7,11 +7,12 @@ import { Button, Card, Empty, ErrorBox, Spinner, StatusBadge } from '../componen
 import { useLoad } from '../hooks'
 import { formatDate, pick } from '../i18n'
 import type { SurveyCard } from '../types'
+import { getItem } from '../storage'
 import { telegramUserId } from '../telegram'
 
 export function hasDraft(surveyId: number): boolean {
   try {
-    return !!localStorage.getItem(`fti_resp_${telegramUserId()}_${surveyId}`)
+    return !!getItem(`fti_resp_${telegramUserId()}_${surveyId}`)
   } catch {
     return false
   }

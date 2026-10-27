@@ -38,6 +38,7 @@ L = {
         "st_completed": "Yakunlangan",
         "st_in_progress": "Jarayonda",
         "st_timed_out": "Vaqt tugagan",
+        "not_applicable": "Tegishli emas",
         "anonymous": "Anonim",
         "row": "Qator",
         "avg_place": "O'rtacha o'rin",
@@ -66,6 +67,7 @@ L = {
         "st_completed": "Завершена",
         "st_in_progress": "В процессе",
         "st_timed_out": "Время истекло",
+        "not_applicable": "Не применимо",
         "anonymous": "Анонимно",
         "row": "Строка",
         "avg_place": "Среднее место",
@@ -156,7 +158,7 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     head = [t["no"], t["status"], t["started"], t["finished"], t["version"]]
     if not anonymous:
         head += [t["respondent"], "Telegram", t["phone"]]
-    questions = [q for q in questions if q["qtype"] != "info"]
+    questions = [q for q in questions if q["qtype"] not in ("info", "section")]
     head += [f"{i}. {q.get(f'text_{lang}') or q['text_uz']}" for i, q in enumerate(questions, 1)]
     regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
     _header(ws2, 1, head)
@@ -193,7 +195,8 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
                 info.get("phone", ""),
             ]
         ra = answers.get(resp.id, {})
-        row += [readable(q, ra.get(q["id"]), lang, regions) for q in questions]
+        skipped = set(resp.skipped or [])
+        row += [t["not_applicable"] if q["id"] in skipped else readable(q, ra.get(q["id"]), lang, regions) for q in questions]
         ws2.append(row)
     for col in range(1, len(head) + 1):
         ws2.column_dimensions[get_column_letter(col)].width = 18 if col <= 8 else 32

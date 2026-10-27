@@ -1,4 +1,5 @@
 // Thin wrapper around window.Telegram.WebApp so the app also opens in a normal browser (dev mode).
+import { getItem } from './storage'
 
 type HapticStyle = 'light' | 'medium' | 'heavy'
 interface TgWebApp {
@@ -35,21 +36,26 @@ export const tg: TgWebApp | undefined = window.Telegram?.WebApp?.initData ? wind
 
 export function initTelegram() {
   if (!tg) return
-  tg.ready()
-  tg.expand()
-  tg.disableVerticalSwipes?.()
+  // each call on its own: an older Telegram client may lack one of them
+  for (const call of [() => tg?.ready(), () => tg?.expand(), () => tg?.disableVerticalSwipes?.()]) {
+    try {
+      call()
+    } catch {
+      /* not supported by this client */
+    }
+  }
 }
 
 /** Value for the Authorization header. */
 export function authHeader(): string {
   if (tg?.initData) return `tma ${tg.initData}`
   // Local development without Telegram (works only when the server runs with DEV_MODE=true).
-  const devId = localStorage.getItem('fti_dev_user') || import.meta.env.VITE_DEV_TELEGRAM_ID || '1'
+  const devId = getItem('fti_dev_user') || import.meta.env.VITE_DEV_TELEGRAM_ID || '1'
   return `dev ${devId}`
 }
 
 export function telegramUserId(): string {
-  return String(tg?.initDataUnsafe.user?.id ?? localStorage.getItem('fti_dev_user') ?? import.meta.env.VITE_DEV_TELEGRAM_ID ?? '1')
+  return String(tg?.initDataUnsafe.user?.id ?? getItem('fti_dev_user') ?? import.meta.env.VITE_DEV_TELEGRAM_ID ?? '1')
 }
 
 export function isDark(): boolean {

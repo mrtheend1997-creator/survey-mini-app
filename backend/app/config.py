@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Local development only: accept "Authorization: dev <telegram_id>" without Telegram.
     # NEVER enable in production.
     dev_mode: bool = False
+    # create the bundled questionnaires (app/seed) once on first start
+    seed_surveys: bool = True
 
     @field_validator("database_url")
     @classmethod

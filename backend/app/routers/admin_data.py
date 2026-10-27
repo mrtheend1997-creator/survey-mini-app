@@ -263,7 +263,7 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
     answers = {a.question_id: a.value for a in db.scalars(select(Answer).where(Answer.response_id == r.id))}
     anonymous = s.survey_type == "anonymous"
     u = db.get(User, r.user_id) if (r.user_id and not anonymous) else None
-    questions = [q for q in version.snapshot.get("questions", []) if q["qtype"] != "info"]
+    questions = [q for q in version.snapshot.get("questions", []) if q["qtype"] not in ("info", "section")]
     regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
     return {
         "id": r.id,
@@ -285,6 +285,10 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
                 "text_uz": q["text_uz"],
                 "text_ru": q["text_ru"],
                 "answer": readable(q, answers.get(q["id"]), lang, regions),
+                # answered / not_applicable (the route skipped it) / empty (optional, left blank)
+                "status": "not_applicable"
+                if q["id"] in (r.skipped or [])
+                else ("answered" if answers.get(q["id"]) is not None else "empty"),
                 "files": (answers.get(q["id"]) or {}).get("files", []) if q["qtype"] == "file" else [],
             }
             for q in questions

@@ -107,8 +107,12 @@ export default function QuestionInput({
   token: string | null
   preview: boolean
 }) {
-  const { t } = useApp()
+  const { t, toast } = useApp()
   const s = q.settings ?? {}
+  // a choice over the limit is refused with a visible warning
+  const tooMany = (max: number) => {
+    toast(t('maxChoicesError', { n: max }), 'error')
+  }
   const [numText, setNumText] = useState(value?.number != null ? String(value.number) : '')
   useEffect(() => setNumText(value?.number != null ? String(value.number) : ''), [q.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -141,7 +145,8 @@ export default function QuestionInput({
       const max = q.max_choices ?? Infinity
       const count = ids.length + (otherOn ? 1 : 0)
       const toggle = (id: number) => {
-        const nextIds = ids.includes(id) ? ids.filter((x) => x !== id) : count >= max ? ids : [...ids, id]
+        if (!ids.includes(id) && count >= max) return tooMany(max)
+        const nextIds = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
         if (!nextIds.length && !otherOn) onChange(null)
         else onChange({ option_ids: nextIds, other: value?.other ?? null })
       }
@@ -161,6 +166,7 @@ export default function QuestionInput({
                 onClick={() => {
                   if (otherOn) onChange(ids.length ? { option_ids: ids, other: null } : null)
                   else if (count < max) onChange({ option_ids: ids, other: '' })
+                  else tooMany(max)
                 }}
               >
                 {t('other')}
@@ -211,7 +217,8 @@ export default function QuestionInput({
       const max = q.max_choices ?? Infinity
       const toggle = (id: number) => {
         if (!multi) return onChange({ option_id: id }, true)
-        const next = ids.includes(id) ? ids.filter((x) => x !== id) : ids.length >= max ? ids : [...ids, id]
+        if (!ids.includes(id) && ids.length >= max) return tooMany(max)
+        const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
         onChange(next.length ? { option_ids: next } : null)
       }
       return (
@@ -468,6 +475,7 @@ export default function QuestionInput({
     case 'region':
       return <RegionInput q={q} value={value} lang={lang} onChange={onChange} />
     case 'info':
+    case 'section':
       return null
   }
 }

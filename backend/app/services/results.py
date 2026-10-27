@@ -64,7 +64,8 @@ def survey_results(db: Session, survey: Survey, version_id: int | None = None) -
     out_questions = []
     for q in questions:
         values = answers_by_q.get(q["id"], [])
-        out_questions.append({**q, "answered": len(values), "stats": question_stats(q, values, regions)})
+        skipped = sum(1 for r in completed if q["id"] in (r.skipped or []))
+        out_questions.append({**q, "answered": len(values), "not_applicable": skipped, "stats": question_stats(q, values, regions)})
 
     per_day = Counter(_local_day(r.completed_at) for r in completed if r.completed_at)
     total = len(responses)
@@ -222,7 +223,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
             "items": [named(rid, c, n) for rid, c in by_region.most_common()],
             "districts": [named(did, c, n) for did, c in by_district.most_common(30)],
         }
-    if qtype == "info":
+    if qtype in ("info", "section"):
         return {"kind": "none"}
     # text / short_text / video / date / time / contact / file
     if qtype == "contact":

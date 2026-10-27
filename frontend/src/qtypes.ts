@@ -6,7 +6,7 @@ export const QTYPE_GROUPS: { key: string; types: QType[] }[] = [
   { key: 'grpText', types: ['short_text', 'text', 'number', 'date', 'time'] },
   { key: 'grpRating', types: ['scale', 'stars', 'nps'] },
   { key: 'grpTable', types: ['matrix', 'matrix_multi', 'ranking', 'points', 'pairwise'] },
-  { key: 'grpOther', types: ['file', 'video', 'contact', 'region', 'info'] },
+  { key: 'grpOther', types: ['file', 'video', 'contact', 'region', 'info', 'section'] },
 ]
 export const LEGACY_TYPES: QType[] = ['rating5', 'rating10']
 
@@ -34,6 +34,7 @@ export const QTYPE_ICON: Record<QType, string> = {
   contact: '📇',
   region: '🗺️',
   info: 'ℹ️',
+  section: '📂',
   rating5: '⭐',
   rating10: '🔟',
 }
@@ -160,6 +161,7 @@ export function isAnswered(q: QuestionT, v: AnswerValue | undefined): boolean {
     case 'region':
       return v.region != null
     case 'info':
+    case 'section':
       return false
   }
 }
@@ -177,7 +179,7 @@ const FORMAT_RE: Record<string, RegExp> = {
 /** Same rules the server checks on submit; returns a reason code or null. */
 export function problem(q: QuestionT, v: AnswerValue | undefined): string | null {
   const s = q.settings ?? {}
-  if (q.qtype === 'info') return null
+  if (q.qtype === 'info' || q.qtype === 'section') return null
   if (!isAnswered(q, v) || !v) return q.required ? 'required' : null
   if (isMulti(q) && q.min_choices && choiceCount(v) < q.min_choices) return 'min_choices'
   if (q.qtype === 'text' || q.qtype === 'short_text' || q.qtype === 'video') {

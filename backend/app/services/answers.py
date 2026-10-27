@@ -300,7 +300,7 @@ def normalize(q: dict, value: dict | None, ctx: Context | None = None) -> dict |
             raise _bad()
         return {"region": rid, "district": did}
 
-    if qtype == "info":
+    if qtype in ("info", "section"):
         return None
 
     raise _bad()
@@ -314,7 +314,7 @@ def problem(q: dict, value: dict | None, ctx: Context | None = None) -> str | No
     """Why this answer can't be submitted (None if it's fine). Checked on final submit."""
     qtype = q["qtype"]
     s = _settings(q)
-    if qtype == "info":
+    if qtype in ("info", "section"):
         return None
     if value is None:
         return "required" if q.get("required") else None
