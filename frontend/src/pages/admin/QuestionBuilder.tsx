@@ -8,7 +8,8 @@ import { useLoad } from '../../hooks'
 import { pick } from '../../i18n'
 import { can } from '../../permissions'
 import { QTYPE_ICON } from '../../qtypes'
-import type { AdminSurvey, Jump, QuestionT } from '../../types'
+import { rulesOf } from '../../logic'
+import type { AdminSurvey, QuestionT } from '../../types'
 
 interface LogicProblem {
   question_id: number
@@ -18,6 +19,7 @@ interface LogicCheck {
   errors: LogicProblem[]
   warnings: LogicProblem[]
 }
+import { describeCond, LogicMap, LogicTester, useTargetLabel } from './LogicTools'
 import QuestionEditor, { IconBtn } from './QuestionEditor'
 
 export default function QuestionBuilder() {
@@ -32,6 +34,8 @@ export default function QuestionBuilder() {
   const [toDelete, setToDelete] = useState<QuestionT | null>(null)
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [tools, setTools] = useState<'' | 'test' | 'map'>('')
+  const targetLabel = useTargetLabel(s?.questions ?? [])
 
   const openEditor = (q: QuestionT | null) => {
     setEditing(q)
@@ -78,12 +82,6 @@ export default function QuestionBuilder() {
     const x = questions.find((y) => y.id === id)
     if (!x) return '—'
     return x.qtype === 'section' ? `📂 ${pick(x, 'text', lang)}` : `${t('questionN', { n: numbers[x.id] })}`
-  }
-  const jumpWhen = (q: QuestionT, when: Jump['when']): string => {
-    if (when === '*') return t('jumpAny')
-    if (when === 'yes' || when === 'no' || when === 'unsure') return t(when)
-    const o = q.options.find((x) => x.id === when)
-    return o ? `«${pick(o, 'text', lang)}»` : '?'
   }
   const canQuestions = can(s, 'question_manage')
   const canPublish = can(s, 'publish')
@@ -152,6 +150,18 @@ export default function QuestionBuilder() {
         </div>
       )}
 
+      {questions.length > 1 && (
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button size="md" variant={tools === 'test' ? 'primary' : 'soft'} onClick={() => setTools(tools === 'test' ? '' : 'test')}>
+            🧪 {t('testerTitle')}
+          </Button>
+          <Button size="md" variant={tools === 'map' ? 'primary' : 'soft'} onClick={() => setTools(tools === 'map' ? '' : 'map')}>
+            🗺️ {t('mapTitle')}
+          </Button>
+        </div>
+      )}
+      {tools !== '' && <Card className="mt-3">{tools === 'test' ? <LogicTester questions={questions} /> : <LogicMap questions={questions} />}</Card>}
+
       <div className="mt-4">
         {questions.length === 0 && <Empty icon="❓" title={t('noQuestions')} hint={t('noQuestionsHint')} />}
         <SortableList
@@ -192,15 +202,24 @@ export default function QuestionBuilder() {
                     </div>
                   )}
                   {q.qtype === 'section' && pick(q, 'description', lang) && <div className="mt-1 text-sm text-muted">{pick(q, 'description', lang)}</div>}
-                  {!!q.logic?.jumps.length && (
-                    <ul className="mt-2 space-y-0.5 text-sm font-medium text-navy-700 dark:text-navy-200">
-                      {q.logic.jumps.map((j, k) => (
-                        <li key={k}>
-                          ↪ {jumpWhen(q, j.when)} → {j.to === 'end' ? `🏁 ${t('jumpEnd')}` : label(j.to)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {(() => {
+                    const r = rulesOf(q)
+                    if (!r.rules.length && r.default === null) return null
+                    return (
+                      <ul className="mt-2 space-y-0.5 text-sm font-medium text-navy-700 dark:text-navy-200">
+                        {r.rules.map((rule, k) => (
+                          <li key={k}>
+                            ↪ {describeCond(q, rule.if, t, lang)} → {targetLabel(rule.to)}
+                          </li>
+                        ))}
+                        {r.default !== null && (
+                          <li>
+                            ↪ {r.rules.length ? t('ruleDefaultShort') : t('jumpAny')} → {targetLabel(r.default)}
+                          </li>
+                        )}
+                      </ul>
+                    )
+                  })()}
                   {(q.image_url || q.video_url) && (
                     <div className="mt-1 text-sm text-muted">
                       {q.image_url && `🖼️ ${t('image')} `}

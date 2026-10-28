@@ -32,6 +32,7 @@ PERMISSIONS = (
     "results_view",
     "export",  # Excel / CSV / PDF
     "participants_manage",  # who may answer and how often
+    "bot_welcome",  # the bot's /start welcome message
 )
 
 VIEW_PERMS = {"results_view", "export"}
@@ -49,7 +50,7 @@ EDIT_PERMS = VIEW_PERMS | {
 FULL_PERMS = EDIT_PERMS | {"publish", "survey_delete"}
 LEVELS = {"view": VIEW_PERMS, "edit": EDIT_PERMS, "full": FULL_PERMS}
 # permissions that are not about one particular survey
-GLOBAL_PERMS = {"survey_create", "template_manage"}
+GLOBAL_PERMS = {"survey_create", "template_manage", "bot_welcome"}
 
 ANALYST_PERMS = VIEW_PERMS
 
@@ -58,7 +59,7 @@ TEMPLATES: dict[str, dict[str, bool]] = {
     "full": {p: True for p in PERMISSIONS},
     "create_edit": {
         p: p
-        not in {"survey_delete", "publish", "export", "anonymity_manage", "participants_manage"}
+        not in {"survey_delete", "publish", "export", "anonymity_manage", "participants_manage", "bot_welcome"}
         for p in PERMISSIONS
     },
     "view_stats": {p: p in VIEW_PERMS for p in PERMISSIONS},
@@ -77,7 +78,8 @@ def normalize(perms: dict | None, role: str) -> dict[str, bool]:
 def default_for(role: str) -> dict[str, bool]:
     if role == "analyst":
         return dict(TEMPLATES["view_stats"])
-    return dict(TEMPLATES["full"])
+    # the bot's welcome is given only on purpose by the Super Admin
+    return dict(TEMPLATES["full"], bot_welcome=False)
 
 
 def granted(user: User) -> set[str]:

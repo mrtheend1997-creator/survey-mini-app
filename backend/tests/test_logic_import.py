@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 
 from app.db import SessionLocal
 from app.models import Answer, AppSetting, Response
-from app.services import importer
+from app.services import importer, logic
 
 from .conftest import SUPER_ID, auth
 
@@ -61,8 +61,11 @@ def test_seeded_questionnaire_matches_word_file(client):
     assert it[14]["hint_uz"] == "Koʻpi bilan uchta javobni tanlang."
     # jumps point at the sections IV and V
     o8 = [o["id"] for o in it[8]["options"]]
-    assert it[8]["logic"] == {"jumps": [{"when": o8[1], "to": it["s4"]["id"]}, {"when": o8[2], "to": it["s4"]["id"]}]}
-    assert it[15]["logic"] == {"jumps": [{"when": "*", "to": it["s5"]["id"]}]}
+    assert it[8]["logic"] == {
+        "rules": [{"if": {"op": "is", "options": [o8[1]]}, "to": it["s4"]["id"]}, {"if": {"op": "is", "options": [o8[2]]}, "to": it["s4"]["id"]}],
+        "default": None,
+    }
+    assert it[15]["logic"] == {"rules": [], "default": it["s5"]["id"]}
     check = client.get(f"/api/admin/surveys/{s['id']}/logic-check", headers=ADMIN).json()
     assert check == {"errors": [], "warnings": []}
 
@@ -91,11 +94,7 @@ def walk(client, sid, choice8, user=USER):
             else:
                 v = {"option_ids": [o["id"] for o in q["options"][:2]]}
             assert put(q, v).status_code == 200, (k, put(q, v).text)
-            for j in (q.get("logic") or {}).get("jumps", []):
-                if j["when"] == "*" or j["when"] == v.get("option_id"):
-                    target = j["to"]
-                    if j["when"] != "*":
-                        break
+            target = logic.next_target(q, v)
         i = index[target] if target else i + 1
     return token, shown, it
 
@@ -188,14 +187,14 @@ def test_editing_jumps_in_the_builder(client):
         return {**b, **changes}
 
     # a backward jump would loop: refused at publish and reported by the check
-    r = client.put(f"/api/admin/questions/{it[12]['id']}", json=body(it[12], logic={"jumps": [{"when": "*", "to": it[9]["id"]}]}), headers=ADMIN)
+    r = client.put(f"/api/admin/questions/{it[12]['id']}", json=body(it[12], logic={"rules": [], "default": it[9]["id"]}), headers=ADMIN)
     assert r.status_code == 200
     check = client.get(f"/api/admin/surveys/{sid}/logic-check", headers=ADMIN).json()
     assert check["errors"] == [{"question_id": it[12]["id"], "code": "logic_backward", "target_id": it[9]["id"]}]
     r = client.post(f"/api/admin/surveys/{sid}/publish", headers=ADMIN)
     assert r.status_code == 422 and _code(r) == "logic_backward"
     # a jump on an answer of a free-text question makes no sense
-    r = client.put(f"/api/admin/questions/{it[3]['id']}", json=body(it[3], logic={"jumps": [{"when": 5, "to": "end"}]}), headers=ADMIN)
+    r = client.put(f"/api/admin/questions/{it[3]['id']}", json=body(it[3], logic={"rules": [{"if": {"op": "is", "options": [5]}, "to": "end"}]}), headers=ADMIN)
     assert r.status_code == 422 and _code(r) == "invalid_logic"
     client.put(f"/api/admin/questions/{it[12]['id']}", json=body(it[12], logic=None), headers=ADMIN)
 
@@ -228,11 +227,11 @@ def test_duplicate_keeps_jumps(client):
     c = client.get(f"/api/admin/surveys/{copy['id']}", headers=ADMIN).json()
     it = items(c)
     o8 = [o["id"] for o in it[8]["options"]]
-    assert it[8]["logic"]["jumps"][0] == {"when": o8[1], "to": it["s4"]["id"]}
+    assert it[8]["logic"]["rules"][0] == {"if": {"op": "is", "options": [o8[1]]}, "to": it["s4"]["id"]}
     assert client.get(f"/api/admin/surveys/{copy['id']}/logic-check", headers=ADMIN).json()["errors"] == []
     # a copied question gets its own option ids in its jumps
     dup = client.post(f"/api/admin/questions/{it[8]['id']}/duplicate", headers=ADMIN).json()
-    assert dup["logic"]["jumps"][0]["when"] == dup["options"][1]["id"]
+    assert dup["logic"]["rules"][0]["if"]["options"] == [dup["options"][1]["id"]]
 
 
 def test_import_endpoint(client):
@@ -246,7 +245,7 @@ def test_import_endpoint(client):
     r = client.post("/api/admin/surveys/import", json=data, headers=ADMIN)
     assert r.status_code == 200, r.text
     s = client.get(f"/api/admin/surveys/{r.json()['id']}", headers=ADMIN).json()
-    assert s["questions"][0]["logic"] == {"jumps": [{"when": "no", "to": "end"}]}
+    assert s["questions"][0]["logic"] == {"rules": [{"if": {"op": "is", "values": ["no"]}, "to": "end"}], "default": None}
     bad = client.post("/api/admin/surveys/import", json={"title": "x", "questions": [{"key": "a", "text": "q", "options": ["1"], "jumps": [{"when_option": 0, "to": "zzz"}]}]}, headers=ADMIN)
     assert bad.status_code == 422 and _code(bad) == "invalid_import"
     assert client.post("/api/admin/surveys/import", json=data, headers=USER).status_code == 403

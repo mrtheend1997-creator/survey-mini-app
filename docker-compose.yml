@@ -56,6 +56,8 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       WEBAPP_URL: ${WEBAPP_URL}
+      # the welcome message edited in the admin panel is read from the API
+      API_URL: http://api:8000
 
   # Daily PostgreSQL dump to ./backups, keeps the last BACKUP_KEEP_DAYS days.
   backup:

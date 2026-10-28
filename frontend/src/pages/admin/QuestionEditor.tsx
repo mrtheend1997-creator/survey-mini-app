@@ -14,9 +14,9 @@ import {
   defaultSettings,
   isMulti,
 } from '../../qtypes'
-import { pick } from '../../i18n'
-import { jumpChoices } from '../../logic'
-import type { Jump, MatrixRow, QSettings, QType, QuestionT, SurveyType } from '../../types'
+import { rulesOf } from '../../logic'
+import type { MatrixRow, QLogic, QSettings, QType, QuestionT, SurveyType } from '../../types'
+import LogicEditor, { cleanLogic } from './LogicEditor'
 
 interface OptionDraft {
   key: string
@@ -43,8 +43,8 @@ interface Draft {
   video_url: string
   hidden: boolean
   time_limit: string
-  // jump target per answer ("*" = any answer): question id as text or "end"; "" = the next question
-  jumps: Record<string, string>
+  // conditional jumps (rules form), edited in LogicEditor
+  logic: QLogic
   min_choices: string
   max_choices: string
   allow_other: boolean
@@ -73,7 +73,7 @@ function toDraft(q?: QuestionT | null): Draft {
     video_url: q?.video_url ?? '',
     hidden: q?.hidden ?? false,
     time_limit: q?.time_limit_seconds ? String(q.time_limit_seconds) : '',
-    jumps: Object.fromEntries((q?.logic?.jumps ?? []).map((j) => [String(j.when), String(j.to)])),
+    logic: q ? rulesOf(q) : { rules: [], default: null },
     min_choices: q?.min_choices ? String(q.min_choices) : '',
     max_choices: q?.max_choices ? String(q.max_choices) : '',
     allow_other: q?.allow_other ?? false,
@@ -198,7 +198,13 @@ export default function QuestionEditor({
       video_url: d.video_url.trim(),
       hidden: d.hidden,
       time_limit_seconds: !noAnswer && d.time_limit ? Number(d.time_limit) : null,
-      logic: canLogic ? logicFromDraft(d, question) : (question?.logic ?? null),
+      logic: canLogic
+        ? cleanLogic(
+            d.logic,
+            { qtype: d.qtype, settings },
+            d.options.flatMap((o) => (o.id != null ? [o.id] : [])),
+          )
+        : (question?.logic ?? null),
       settings,
       min_choices: multi && d.min_choices ? Number(d.min_choices) : null,
       max_choices: multi && d.max_choices ? Number(d.max_choices) : null,
@@ -387,7 +393,18 @@ export default function QuestionEditor({
           <Bilingual label={t('hint')} multiline uz={d.hint_uz} ru={d.hint_ru} onUz={(v) => set('hint_uz', v)} onRu={(v) => set('hint_ru', v)} />
         )}
 
-        <JumpEditor d={d} question={question} allQuestions={allQuestions} disabled={!canLogic} onChange={(jumps) => set('jumps', jumps)} />
+        {d.qtype !== 'section' && (
+          <LogicEditor
+            value={d.logic}
+            onChange={(l) => set('logic', l)}
+            question={question}
+            qtype={d.qtype}
+            settings={s}
+            options={hasOptions ? d.options : []}
+            allQuestions={allQuestions}
+            disabled={!canLogic}
+          />
+        )}
 
         <details className="rounded-2xl border border-line bg-card p-3" open={d.hidden || !!d.time_limit || (!!d.video_url && d.qtype !== 'video')}>
           <summary className="cursor-pointer select-none font-semibold">⚙️ {t('advanced')}</summary>
@@ -792,79 +809,5 @@ export function IconBtn({ label, title, onClick, disabled }: { label: string; ti
     >
       {label}
     </button>
-  )
-}
-
-/** The jumps to save: only answers that still exist and targets that were picked. */
-function logicFromDraft(d: Draft, question: QuestionT | null): { jumps: Jump[] } | null {
-  const choices = question ? jumpChoices({ ...question, qtype: d.qtype, settings: d.settings }) : []
-  const allowed = new Set(['*', ...choices.map((c) => String(c.when))])
-  const jumps: Jump[] = []
-  for (const [when, to] of Object.entries(d.jumps)) {
-    if (!to || !allowed.has(when)) continue
-    const w = when === '*' || when === 'yes' || when === 'no' || when === 'unsure' ? when : Number(when)
-    jumps.push({ when: w, to: to === 'end' ? 'end' : Number(to) })
-  }
-  return jumps.length ? { jumps } : null
-}
-
-/** "After this answer go to…": per answer (choice and yes/no questions) and for any answer. */
-function JumpEditor({
-  d,
-  question,
-  allQuestions,
-  disabled,
-  onChange,
-}: {
-  d: Draft
-  question: QuestionT | null
-  allQuestions: QuestionT[]
-  disabled: boolean
-  onChange: (jumps: Record<string, string>) => void
-}) {
-  const { t, lang } = useApp()
-  const pos = question ? allQuestions.findIndex((x) => x.id === question.id) : -1
-  // only forward: a jump back would make the survey go round in circles
-  const later = pos >= 0 ? allQuestions.slice(pos + 1).filter((x) => !x.hidden) : []
-  const choices = question ? jumpChoices({ ...question, qtype: d.qtype, settings: d.settings }) : []
-  let n = allQuestions.slice(0, pos + 1).filter((x) => x.qtype !== 'section').length
-  const targetLabel = (x: QuestionT) => (x.qtype === 'section' ? `📂 ${pick(x, 'text', lang)}` : `${++n}. ${pick(x, 'text', lang)}`)
-  const targets = later.map((x) => ({ value: String(x.id), label: targetLabel(x) }))
-  const set = (when: string, to: string) => onChange({ ...d.jumps, [when]: to })
-  const choiceLabel = (c: (typeof choices)[number]) =>
-    c.optionIndex !== undefined ? pick(question!.options[c.optionIndex], 'text', lang) : t(c.when === 'yes' ? 'yes' : c.when === 'no' ? 'no' : 'unsure')
-  const select = (when: string) => (
-    <Select value={d.jumps[when] ?? ''} disabled={disabled} onChange={(e) => set(when, e.target.value)}>
-      <option value="">{t('jumpNext')}</option>
-      {targets.map((x) => (
-        <option key={x.value} value={x.value}>
-          {x.label.length > 70 ? x.label.slice(0, 70) + '…' : x.label}
-        </option>
-      ))}
-      <option value="end">🏁 {t('jumpEnd')}</option>
-    </Select>
-  )
-  const used = Object.values(d.jumps).some(Boolean)
-  return (
-    <details className="rounded-2xl border border-line bg-card p-3" open={used}>
-      <summary className="cursor-pointer select-none font-semibold">🔀 {t('jumpsTitle')}</summary>
-      <div className="mt-3 space-y-4">
-        <p className="text-sm text-muted">{question ? t('jumpsHint') : t('jumpsSaveFirst')}</p>
-        {question &&
-          choices.map((c) => (
-            <div key={String(c.when)}>
-              <Label>{t('jumpIfAnswer', { a: choiceLabel(c) })}</Label>
-              {select(String(c.when))}
-            </div>
-          ))}
-        {question && (
-          <div>
-            <Label>{choices.length ? t('jumpOtherwise') : t('jumpAfter')}</Label>
-            {select('*')}
-          </div>
-        )}
-        {disabled && <p className="text-sm text-muted">🔒 {t('jumpsNoRight')}</p>}
-      </div>
-    </details>
   )
 }

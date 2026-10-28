@@ -4,7 +4,6 @@ import { api, ApiError } from './api'
 import { useApp } from './app-context'
 import { ErrorBox, Spinner } from './components/ui'
 import { Logo } from './components/Header'
-import { getItem } from './storage'
 import { tg } from './telegram'
 import type { Me } from './types'
 import Home from './pages/Home'
@@ -22,10 +21,11 @@ const AdminStats = lazy(() => import('./pages/admin/AdminStats'))
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'))
 const AdminAdmins = lazy(() => import('./pages/admin/AdminAdmins'))
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'))
+const BotSettings = lazy(() => import('./pages/admin/BotSettings'))
 const Preview = lazy(() => import('./pages/admin/Preview'))
 
 export default function App() {
-  const { me, setMe, t, errorText, lang, setLang } = useApp()
+  const { me, setMe, t, errorText, applyProfileLang } = useApp()
   const [error, setError] = useState<unknown>(null)
 
   const load = () => {
@@ -34,8 +34,8 @@ export default function App() {
       .get<Me>('/api/me')
       .then((m) => {
         setMe(m)
-        // first visit: use the language stored in the profile
-        if (!getItem('fti_lang') && m.language !== lang) setLang(m.language)
+        // the profile decides: the user's own choice, otherwise the default language
+        applyProfileLang(m)
       })
       .catch(setError)
   }
@@ -85,6 +85,7 @@ export default function App() {
             {superAdmin && <Route path="admins" element={<AdminAdmins />} />}
             {superAdmin && <Route path="users" element={<AdminUsers />} />}
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="bot" element={<BotSettings />} />
           </Route>
         )}
         <Route path="*" element={<Navigate to="/" replace />} />

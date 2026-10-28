@@ -59,20 +59,20 @@ def validate_init_data(init_data: str, bot_token: str, max_age: int) -> dict:
     return user
 
 
+def default_language(db: Session) -> str:
+    row = db.get(AppSetting, "default_language")
+    return row.value if row and row.value in ("uz", "ru") else "uz"
+
+
 def _upsert_user(db: Session, tg: dict) -> User:
     settings = get_settings()
     user = db.scalar(select(User).where(User.telegram_id == tg["id"]))
     changed = False
     if user is None:
         changed = True
-        code = str(tg.get("language_code", ""))
-        if code.startswith("ru"):
-            lang = "ru"
-        elif code.startswith("uz"):
-            lang = "uz"
-        else:
-            row = db.get(AppSetting, "default_language")
-            lang = row.value if row and row.value in ("uz", "ru") else "uz"
+        # new users always start in the default language (Uzbek unless the Super Admin changed
+        # it), whatever language their Telegram app uses
+        lang = default_language(db)
         try:
             with db.begin_nested():
                 user = User(telegram_id=tg["id"], language=lang, role="user")
@@ -80,6 +80,10 @@ def _upsert_user(db: Session, tg: dict) -> User:
         except IntegrityError:
             # another request created the same user at the same moment
             user = db.scalar(select(User).where(User.telegram_id == tg["id"]))
+    if not user.language_chosen and user.language != (lang := default_language(db)):
+        # until the user picks a language themselves they follow the default
+        user.language = lang
+        changed = True
     for attr in ("first_name", "last_name", "username"):
         value = (tg.get(attr) or "")[:255]
         if getattr(user, attr) != value:

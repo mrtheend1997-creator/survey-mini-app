@@ -29,6 +29,7 @@ def me_payload(user: User) -> dict:
         "last_name": user.last_name,
         "username": user.username,
         "language": user.language,
+        "language_chosen": user.language_chosen,
         "role": user.access_role,
         "can_admin": has_role(user, "analyst"),
         # permission switches that are on; what is allowed for a particular survey also depends
@@ -47,6 +48,7 @@ def get_me(user: User = Depends(get_current_user)):
 @router.patch("/me")
 def update_me(body: MeUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     user.language = body.language
+    user.language_chosen = True
     db.commit()
     return me_payload(user)
 

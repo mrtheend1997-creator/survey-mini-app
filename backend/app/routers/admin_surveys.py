@@ -453,7 +453,7 @@ def _apply_question(db: Session, q: Question, body: QuestionIn) -> None:
     q.video_url = _check_video(body.video_url)
     q.hidden = body.hidden
     q.time_limit_seconds = body.time_limit_seconds if body.qtype not in qtypes.NO_ANSWER_TYPES else None
-    q.logic = logic.clean_logic(body.qtype, body.logic)
+    q.logic = logic.clean_logic(body.qtype, body.logic, q.settings)
     q.allow_other = body.allow_other if body.qtype in qtypes.OTHER_TYPES else False
     q.min_choices = body.min_choices if multi else None
     q.max_choices = body.max_choices if multi else None
@@ -525,7 +525,7 @@ def update_question(question_id: int, body: QuestionIn, user: User = Depends(adm
         raise ApiError(403, "no_permission")
     if body.time_limit_seconds != q.time_limit_seconds and "timer_manage" not in allowed:
         raise ApiError(403, "no_permission")
-    if logic.clean_logic(body.qtype, body.logic) != q.logic and "logic_manage" not in allowed:
+    if logic.clean_logic(body.qtype, body.logic, body.settings) != logic.clean_logic(q.qtype, q.logic, q.settings) and "logic_manage" not in allowed:
         raise ApiError(403, "no_permission")
     if "option_manage" not in allowed:
         if body.qtype in qtypes.OPTION_TYPES:
@@ -594,12 +594,15 @@ def _remap_logic(db: Session, copied: list[tuple[Question, Question]]) -> None:
         if not old.logic:
             continue
         omap = {o.id: n.id for o, n in zip(live_options(db, old.id), live_options(db, new.id))}
-        jumps = []
-        for j in old.logic.get("jumps", []):
-            when = omap.get(j["when"], j["when"]) if isinstance(j["when"], int) else j["when"]
-            to = qmap.get(j["to"], j["to"]) if isinstance(j["to"], int) else j["to"]
-            jumps.append({"when": when, "to": to})
-        new.logic = {"jumps": jumps}
+        r = logic.rules_of({"logic": old.logic})
+        move = lambda to: qmap.get(to, to) if isinstance(to, int) else to  # noqa: E731
+        rules = []
+        for rule in r["rules"]:
+            cond = dict(rule["if"])
+            if "options" in cond:
+                cond["options"] = [omap.get(o, o) for o in cond["options"]]
+            rules.append({"if": cond, "to": move(rule["to"])})
+        new.logic = {"rules": rules, "default": move(r["default"])}
 
 
 @router.post("/questions/{question_id}/duplicate")

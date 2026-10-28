@@ -3,7 +3,7 @@ import { api, ApiError } from './api'
 import { translate, type Key, type Lang } from './i18n'
 import { getItem, setItem } from './storage'
 import type { Me } from './types'
-import { haptic, tg } from './telegram'
+import { haptic } from './telegram'
 
 interface Toast {
   id: number
@@ -15,6 +15,7 @@ interface Ctx {
   me: Me | null
   setMe: (m: Me) => void
   lang: Lang
+  applyProfileLang: (m: Me) => void
   setLang: (l: Lang) => void
   t: (key: Key, vars?: Record<string, string | number>) => string
   toast: (text: string, kind?: Toast['kind']) => void
@@ -25,10 +26,17 @@ interface Ctx {
 const AppCtx = createContext<Ctx | null>(null)
 
 function initialLang(): Lang {
-  const saved = getItem('fti_lang')
-  if (saved === 'uz' || saved === 'ru') return saved
-  const code = tg?.initDataUnsafe.user?.language_code ?? ''
-  return code.startsWith('ru') ? 'ru' : 'uz' // Uzbek is the main language
+  // only a language the user picked themselves is remembered; everyone else starts in Uzbek
+  // (whatever language Telegram uses) until the profile from the server says otherwise
+  const saved = getItem(LANG_KEY)
+  return saved === 'uz' || saved === 'ru' ? saved : 'uz'
+}
+
+const LANG_KEY = 'fti_lang_chosen'
+
+/** The language from the profile: the user's own choice, or the default set by the Super Admin. */
+export function profileLang(m: Me): Lang {
+  return m.language === 'ru' ? 'ru' : 'uz'
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -43,12 +51,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
-    setItem('fti_lang', l)
+    setItem(LANG_KEY, l)
     haptic.tap()
     api
       .patch<Me>('/api/me', { language: l })
       .then(setMe)
       .catch(() => undefined)
+  }, [])
+
+  const applyProfileLang = useCallback((m: Me) => {
+    const l = profileLang(m)
+    setLangState(l)
+    if (m.language_chosen) setItem(LANG_KEY, l)
   }, [])
 
   const t = useCallback((key: Key, vars?: Record<string, string | number>) => translate(lang, key, vars), [lang])
@@ -73,7 +87,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
   const showError = useCallback((e: unknown) => toast(errorText(e), 'error'), [toast, errorText])
 
-  const value = useMemo(() => ({ me, setMe, lang, setLang, t, toast, errorText, showError }), [me, lang, setLang, t, toast, errorText, showError])
+  const value = useMemo(
+    () => ({ me, setMe, lang, setLang, applyProfileLang, t, toast, errorText, showError }),
+    [me, lang, setLang, applyProfileLang, t, toast, errorText, showError],
+  )
 
   return (
     <AppCtx.Provider value={value}>

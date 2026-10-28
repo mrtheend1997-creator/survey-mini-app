@@ -40,7 +40,7 @@ def _super_survey(client, title="S", publish=False):
 
 def test_template_create_and_edit(client):
     t = _templates(client)
-    assert set(t) == {"full", "create_edit", "view_stats"} and len(t["full"]) == 15
+    assert set(t) == {"full", "create_edit", "view_stats"} and len(t["full"]) == 16
     a = _add(client, ADMIN_TG, permissions=t["create_edit"])
     me = client.get("/api/me", headers=ADMIN).json()
     assert "survey_create" in me["permissions"] and "publish" not in me["permissions"] and not me["can_export"]
@@ -182,7 +182,7 @@ def test_all_surveys_level_and_analyst_limits(client):
 
     # an Analyst promoted to Admin starts from the usual Admin set
     promoted = client.patch(f"/api/admin/admins/{an['id']}", json={"role": "admin"}, headers=SUPER).json()
-    assert all(promoted["permissions"].values())
+    assert all(v for k, v in promoted["permissions"].items() if k != "bot_welcome") and not promoted["permissions"]["bot_welcome"]
 
     # copying another administrator's permissions is a plain save of their set
     copied = client.patch(f"/api/admin/admins/{an['id']}", json={"permissions": a["permissions"]}, headers=SUPER).json()

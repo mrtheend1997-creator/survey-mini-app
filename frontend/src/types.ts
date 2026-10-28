@@ -36,6 +36,7 @@ export interface Me {
   last_name: string
   username: string
   language: 'uz' | 'ru'
+  language_chosen?: boolean
   role: Role
   can_admin: boolean
   can_export: boolean
@@ -112,18 +113,50 @@ export interface QuestionT {
   hidden?: boolean
   settings?: QSettings
   time_limit_seconds?: number | null
-  logic?: QLogic | null
+  logic?: QLogic | LegacyLogic | null
   options: (OptionT & { id: number })[]
   position?: number
 }
 
-/** Where the respondent goes after a question: "when" is an option id, "yes"/"no"/"unsure" or "*" (any answer). */
-export interface Jump {
-  when: number | 'yes' | 'no' | 'unsure' | '*'
-  to: number | 'end'
+/** Where a rule sends the respondent: a later question or section id, 'end', or null (the next question). */
+export type JumpTarget = number | 'end' | null
+export type CondOp =
+  | 'is'
+  | 'not'
+  | 'has'
+  | 'lacks'
+  | 'all'
+  | 'any'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'eq'
+  | 'between'
+  | 'equals'
+  | 'contains'
+  | 'answered'
+  | 'unanswered'
+export interface Cond {
+  op: CondOp
+  options?: number[]
+  values?: ('yes' | 'no' | 'unsure')[]
+  value?: number | string
+  min?: number
+  max?: number
 }
+export interface Rule {
+  if: Cond
+  to: JumpTarget
+}
+/** Conditional jumps: the first rule that holds decides, otherwise the default. Same as backend/app/services/logic.py. */
 export interface QLogic {
-  jumps: Jump[]
+  rules: Rule[]
+  default: JumpTarget
+}
+/** How jumps were stored before rules existed (published versions may still have it). */
+export interface LegacyLogic {
+  jumps: { when: number | 'yes' | 'no' | 'unsure' | '*'; to: number | 'end' }[]
 }
 
 export interface UploadedFile {

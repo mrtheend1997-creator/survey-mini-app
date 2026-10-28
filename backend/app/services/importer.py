@@ -114,7 +114,7 @@ def import_survey(db: Session, data: dict, owner: User | None) -> Survey:
                     raise ApiError(422, "invalid_import", {"field": "to", "key": key})
                 to = by_key[to].id
             jumps.append({"when": when, "to": to})
-        q.logic = logic.clean_logic(q.qtype, {"jumps": jumps})
+        q.logic = logic.clean_logic(q.qtype, {"jumps": jumps}, q.settings)
     db.flush()
     return s
 

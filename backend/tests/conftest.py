@@ -32,11 +32,11 @@ from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
-def make_init_data(user_id: int, first_name: str = "Test", auth_date: int | None = None, token: str = BOT_TOKEN) -> str:
+def make_init_data(user_id: int, first_name: str = "Test", auth_date: int | None = None, token: str = BOT_TOKEN, language_code: str = "uz") -> str:
     data = {
         "auth_date": str(auth_date or int(time.time())),
         "query_id": "AAH",
-        "user": json.dumps({"id": user_id, "first_name": first_name, "language_code": "uz"}, separators=(",", ":")),
+        "user": json.dumps({"id": user_id, "first_name": first_name, "language_code": language_code}, separators=(",", ":")),
     }
     check = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
     secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
@@ -44,8 +44,8 @@ def make_init_data(user_id: int, first_name: str = "Test", auth_date: int | None
     return urlencode(data)
 
 
-def auth(user_id: int, name: str = "Test") -> dict:
-    return {"Authorization": f"tma {make_init_data(user_id, name)}"}
+def auth(user_id: int, name: str = "Test", language_code: str = "uz") -> dict:
+    return {"Authorization": f"tma {make_init_data(user_id, name, language_code=language_code)}"}
 
 
 @pytest.fixture()

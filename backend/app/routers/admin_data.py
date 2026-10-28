@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import time as _time
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -33,7 +33,8 @@ def _tz() -> ZoneInfo:
 
 
 def _day_start(d: date) -> datetime:
-    return datetime.combine(d, time.min, tzinfo=_tz())
+    # in UTC, so the bound also compares right where times are kept without a zone (SQLite)
+    return datetime.combine(d, time.min, tzinfo=_tz()).astimezone(timezone.utc)
 
 
 @router.get("/dashboard")
