@@ -49,6 +49,8 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(255), default="")
     username: Mapped[str] = mapped_column(String(255), default="")
     language: Mapped[str] = mapped_column(String(2), default="uz")
+    # the user picked the language themselves; until then they get the default language
+    language_chosen: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     role: Mapped[str] = mapped_column(String(20), default="user", index=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

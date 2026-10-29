@@ -17,6 +17,7 @@ export const PERMISSIONS = [
   'results_view',
   'export',
   'participants_manage',
+  'bot_welcome',
 ] as const
 
 export type Perm = (typeof PERMISSIONS)[number]

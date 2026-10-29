@@ -13,7 +13,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .errors import ApiError
 from .services import importer
-from .routers import admin_admins, admin_data, admin_regions, admin_surveys, admin_users, client_log, files, public
+from .routers import admin_admins, admin_bot, admin_data, admin_regions, admin_surveys, admin_users, client_log, files, public
 
 log = logging.getLogger("fti")
 settings = get_settings()
@@ -53,6 +53,8 @@ app.include_router(admin_data.router)
 app.include_router(admin_users.router)
 app.include_router(admin_admins.router)
 app.include_router(admin_regions.router)
+app.include_router(admin_bot.router)
+app.include_router(admin_bot.router)
 app.include_router(telegram_bot.router)
 app.include_router(files.router)
 app.include_router(client_log.router)
