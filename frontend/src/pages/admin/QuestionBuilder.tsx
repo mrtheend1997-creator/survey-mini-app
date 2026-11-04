@@ -20,6 +20,7 @@ interface LogicCheck {
   warnings: LogicProblem[]
 }
 import { describeCond, LogicMap, LogicTester, useTargetLabel } from './LogicTools'
+import NewLatinDialog, { MissingBadge, questionMissing } from './NewLatin'
 import QuestionEditor, { IconBtn } from './QuestionEditor'
 
 export default function QuestionBuilder() {
@@ -35,6 +36,7 @@ export default function QuestionBuilder() {
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tools, setTools] = useState<'' | 'test' | 'map'>('')
+  const [newLatin, setNewLatin] = useState(false)
   const targetLabel = useTargetLabel(s?.questions ?? [])
 
   const openEditor = (q: QuestionT | null) => {
@@ -127,7 +129,19 @@ export default function QuestionBuilder() {
         )}
       </div>
 
+      {canQuestions && can(s, 'survey_edit') && (
+        <Button variant="soft" size="md" block className="mt-2" onClick={() => setNewLatin(true)}>
+          Ö {t('newLatinTitle')}
+        </Button>
+      )}
+
       <div className="mt-4">{addButton}</div>
+
+      {questions.some((q) => questionMissing(q).length > 0) && (
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-[15px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          🌐 {t('trMissingSummary', { n: questions.filter((q) => questionMissing(q).length > 0).length })}
+        </div>
+      )}
 
       {!!check.data && (check.data.errors.length > 0 || check.data.warnings.length > 0) && (
         <div className="mt-4 space-y-2">
@@ -185,6 +199,7 @@ export default function QuestionBuilder() {
                     {QTYPE_ICON[q.qtype]} {t(`qt_${q.qtype}`)}
                     {q.required && <span className="ml-2 text-red-600">● {t('required')}</span>}
                     {q.hidden && <span className="ml-2 text-amber-600">🙈 {t('hiddenBadge')}</span>}
+                    <MissingBadge q={q} />
                   </div>
                   <div className="mt-0.5 font-semibold leading-snug">{pick(q, 'text', lang)}</div>
                   {q.options.length > 0 && !q.settings?.rows?.length && (
@@ -283,6 +298,16 @@ export default function QuestionBuilder() {
           await act(() => api.post(`/api/admin/surveys/${s.id}/publish`), t('publishedOk'))
           setBusy(false)
           setConfirmPublish(false)
+        }}
+      />
+      <NewLatinDialog
+        open={newLatin}
+        surveyId={s.id}
+        labelOf={label}
+        onClose={() => setNewLatin(false)}
+        onDone={() => {
+          setNewLatin(false)
+          reload()
         }}
       />
     </div>

@@ -59,6 +59,7 @@ def public_settings(db: Session = Depends(get_db), _: User = Depends(get_current
     return {
         "org_name_uz": s.get("org_name_uz", ""),
         "org_name_ru": s.get("org_name_ru", ""),
+        "org_name_oz": s.get("org_name_oz", ""),
         "support_contact": s.get("support_contact", ""),
         "default_language": s.get("default_language", "uz"),
     }
@@ -83,8 +84,10 @@ def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion
         "id": survey.id,
         "title_uz": survey.title_uz,
         "title_ru": survey.title_ru,
+        "title_oz": survey.title_oz,
         "description_uz": survey.description_uz,
         "description_ru": survey.description_ru,
+        "description_oz": survey.description_oz,
         "question_count": qcount,
         "estimated_minutes": estimated_minutes(survey, qcount),
         "start_date": survey.start_date,
@@ -98,6 +101,7 @@ def _survey_card(db: Session, user: User, survey: Survey, version: SurveyVersion
         "allow_edit": survey.allow_edit and survey.survey_type != "anonymous",
         "thanks_uz": survey.thanks_uz,
         "thanks_ru": survey.thanks_ru,
+        "thanks_oz": survey.thanks_oz,
         **_participation_state(db, user, survey),
     }
 
@@ -389,11 +393,11 @@ async def upload_answer_file(
 def list_regions(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Regions with their districts, for the "Region → district" question."""
     rows = list(db.scalars(select(Region).where(Region.deleted_at.is_(None)).order_by(Region.position, Region.id)))
-    out = [{"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru, "districts": []} for r in rows if r.parent_id is None]
+    out = [{"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru, "name_oz": r.name_oz, "districts": []} for r in rows if r.parent_id is None]
     by_id = {r["id"]: r for r in out}
     for r in rows:
         if r.parent_id in by_id:
-            by_id[r.parent_id]["districts"].append({"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru})
+            by_id[r.parent_id]["districts"].append({"id": r.id, "name_uz": r.name_uz, "name_ru": r.name_ru, "name_oz": r.name_oz})
     return out
 
 

@@ -12,6 +12,7 @@ interface EditState {
   parent_id?: number | null
   name_uz: string
   name_ru: string
+  name_oz?: string
 }
 
 /** Super Admin: the regions → districts list used by "Region" questions. */
@@ -28,8 +29,9 @@ export default function RegionsSettings() {
     if (!edit) return
     setBusy(true)
     try {
-      if (edit.id) await api.patch(`/api/admin/regions/${edit.id}`, { name_uz: edit.name_uz, name_ru: edit.name_ru })
-      else await api.post('/api/admin/regions', { name_uz: edit.name_uz, name_ru: edit.name_ru, parent_id: edit.parent_id ?? null })
+      if (edit.id) await api.patch(`/api/admin/regions/${edit.id}`, { name_uz: edit.name_uz, name_ru: edit.name_ru, name_oz: edit.name_oz ?? '' })
+      else
+        await api.post('/api/admin/regions', { name_uz: edit.name_uz, name_ru: edit.name_ru, name_oz: edit.name_oz ?? '', parent_id: edit.parent_id ?? null })
       toast(t('savedOk'))
       setEdit(null)
       await list.reload()
@@ -60,7 +62,7 @@ export default function RegionsSettings() {
                       {r.districts.length} {t('districtsShort')} {expanded === r.id ? '▲' : '▼'}
                     </div>
                   </button>
-                  <IconBtn label="✏️" title={t('edit')} onClick={() => setEdit({ id: r.id, name_uz: r.name_uz, name_ru: r.name_ru })} />
+                  <IconBtn label="✏️" title={t('edit')} onClick={() => setEdit({ id: r.id, name_uz: r.name_uz, name_ru: r.name_ru, name_oz: r.name_oz })} />
                   <IconBtn label="🗑️" title={t('delete')} onClick={() => setToDelete({ id: r.id, name: pick(r, 'name', lang) })} />
                 </div>
                 {expanded === r.id && (
@@ -68,7 +70,11 @@ export default function RegionsSettings() {
                     {r.districts.map((d) => (
                       <div key={d.id} className="flex items-center gap-2 pl-3">
                         <span className="min-w-0 flex-1 text-[15px]">{pick(d, 'name', lang)}</span>
-                        <IconBtn label="✏️" title={t('edit')} onClick={() => setEdit({ id: d.id, name_uz: d.name_uz, name_ru: d.name_ru })} />
+                        <IconBtn
+                          label="✏️"
+                          title={t('edit')}
+                          onClick={() => setEdit({ id: d.id, name_uz: d.name_uz, name_ru: d.name_ru, name_oz: d.name_oz })}
+                        />
                         <IconBtn label="🗑️" title={t('delete')} onClick={() => setToDelete({ id: d.id, name: pick(d, 'name', lang) })} />
                       </div>
                     ))}
@@ -101,6 +107,10 @@ export default function RegionsSettings() {
             <div>
               <Label required>UZ</Label>
               <Input autoFocus value={edit.name_uz} onChange={(e) => setEdit({ ...edit, name_uz: e.target.value })} />
+            </div>
+            <div>
+              <Label>ЎЗ</Label>
+              <Input lang="uz-Cyrl" value={edit.name_oz ?? ''} onChange={(e) => setEdit({ ...edit, name_oz: e.target.value })} />
             </div>
             <div>
               <Label required>RU</Label>

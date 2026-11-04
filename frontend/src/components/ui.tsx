@@ -7,7 +7,11 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react'
+import { hasOldLetters, toNewLatin } from '../alphabet'
 import { useApp } from '../app-context'
+import { HTML_LANG, LANG_CODE, LANGS, type Lang } from '../i18n'
+
+const LANG_NAME = { uz: 'langUz', oz: 'langOz', ru: 'langRu' } as const
 
 type Variant = 'primary' | 'success' | 'outline' | 'danger' | 'ghost' | 'soft'
 
@@ -136,13 +140,86 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   )
 }
 
-/** Two stacked inputs for the Uzbek and Russian version of one field. */
+/**
+ * One translated field: an input per language (Uzbek Latin, Uzbek Cyrillic, Russian).
+ * An empty language is marked: respondents then see the text of another language, nothing
+ * is translated automatically. The Uzbek Latin input offers a one-click change to the new
+ * alphabet (Ö, Ğ, Ş, Ç) when the text still has o‘, g‘, sh or ch.
+ */
+export function LangFields({
+  values,
+  onChange,
+  multiline,
+  compact,
+  inputRef,
+  placeholders,
+}: {
+  values: Partial<Record<Lang, string>>
+  onChange: (lang: Lang, v: string) => void
+  multiline?: boolean
+  compact?: boolean
+  inputRef?: (el: HTMLInputElement | null) => void
+  placeholders?: Partial<Record<Lang, string>>
+}) {
+  const { t } = useApp()
+  const C = multiline ? TextArea : Input
+  const anyFilled = LANGS.some((l) => (values[l] ?? '').trim())
+  return (
+    <div className="space-y-2">
+      {LANGS.map((l, i) => {
+        const v = values[l] ?? ''
+        const missing = anyFilled && !v.trim()
+        return (
+          <div key={l}>
+            <div className={`flex gap-2 ${compact ? 'items-center' : 'items-start'}`}>
+              <span
+                className={`${compact ? 'w-8' : 'mt-3 w-9'} shrink-0 text-xs font-bold ${missing ? 'text-amber-600' : 'text-muted'}`}
+                title={t(LANG_NAME[l])}
+              >
+                {LANG_CODE[l]}
+              </span>
+              <div className="min-w-0 flex-1">
+                {compact && !multiline ? (
+                  <Input
+                    ref={i === 0 ? inputRef : undefined}
+                    lang={HTML_LANG[l]}
+                    value={v}
+                    placeholder={placeholders?.[l]}
+                    onChange={(e) => onChange(l, e.target.value)}
+                  />
+                ) : (
+                  <C lang={HTML_LANG[l]} value={v} placeholder={placeholders?.[l]} onChange={(e) => onChange(l, e.target.value)} />
+                )}
+              </div>
+              {l === 'uz' && hasOldLetters(v) && (
+                <button
+                  type="button"
+                  title={t('toNewLatin')}
+                  aria-label={t('toNewLatin')}
+                  onClick={() => onChange('uz', toNewLatin(v))}
+                  className={`${compact ? '' : 'mt-1.5'} h-9 shrink-0 rounded-lg border border-line px-2 text-sm font-bold text-navy-700 hover:bg-navy-50 dark:text-navy-200 dark:hover:bg-white/10`}
+                >
+                  Ö
+                </button>
+              )}
+            </div>
+            {missing && <p className={`${compact ? 'ml-10' : 'ml-11'} mt-0.5 text-xs text-amber-700 dark:text-amber-300`}>{t('trMissing')}</p>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A labelled translated field (the name is from when there were two languages). */
 export function Bilingual({
   label,
   uz,
   ru,
+  oz,
   onUz,
   onRu,
+  onOz,
   multiline,
   required,
   placeholderUz,
@@ -151,27 +228,25 @@ export function Bilingual({
   label: string
   uz: string
   ru: string
+  oz?: string
   onUz: (v: string) => void
   onRu: (v: string) => void
+  onOz?: (v: string) => void
   multiline?: boolean
   required?: boolean
   placeholderUz?: string
   placeholderRu?: string
 }) {
-  const C = multiline ? TextArea : Input
+  const set = { uz: onUz, ru: onRu, oz: onOz ?? (() => undefined) }
   return (
     <div>
       <Label required={required}>{label}</Label>
-      <div className="space-y-2">
-        <div className="flex items-start gap-2">
-          <span className="mt-3 w-9 shrink-0 text-xs font-bold text-muted">UZ</span>
-          <C value={uz} placeholder={placeholderUz} onChange={(e) => onUz(e.target.value)} />
-        </div>
-        <div className="flex items-start gap-2">
-          <span className="mt-3 w-9 shrink-0 text-xs font-bold text-muted">RU</span>
-          <C value={ru} placeholder={placeholderRu} onChange={(e) => onRu(e.target.value)} />
-        </div>
-      </div>
+      <LangFields
+        values={{ uz, oz: oz ?? '', ru }}
+        onChange={(l, v) => set[l](v)}
+        multiline={multiline}
+        placeholders={{ uz: placeholderUz, ru: placeholderRu }}
+      />
     </div>
   )
 }

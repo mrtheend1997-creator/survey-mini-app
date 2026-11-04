@@ -35,7 +35,7 @@ def add_region(body: RegionIn, user: User = Depends(super_only), db: Session = D
         if parent.parent_id is not None:  # only two levels: region → district
             raise ApiError(422, "invalid_answer")
     pos = db.scalar(select(func.coalesce(func.max(Region.position), -1)).where(Region.parent_id == body.parent_id)) + 1
-    r = Region(parent_id=body.parent_id, position=pos, name_uz=body.name_uz.strip(), name_ru=body.name_ru.strip())
+    r = Region(parent_id=body.parent_id, position=pos, name_uz=body.name_uz.strip(), name_ru=body.name_ru.strip(), name_oz=body.name_oz.strip())
     db.add(r)
     db.flush()
     audit.log(db, user, "region.create", "region", r.id, name=r.name_uz)
@@ -50,6 +50,8 @@ def rename_region(region_id: int, body: RegionPatch, user: User = Depends(super_
         r.name_uz = body.name_uz.strip()
     if body.name_ru is not None:
         r.name_ru = body.name_ru.strip()
+    if body.name_oz is not None:
+        r.name_oz = body.name_oz.strip()
     audit.log(db, user, "region.update", "region", r.id, name=r.name_uz)
     db.commit()
     return {"ok": True}

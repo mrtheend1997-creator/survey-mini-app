@@ -11,6 +11,7 @@ from ..auth import require_role
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
+from ..langs import LANGS, any_filled, pick
 from ..models import (
     Option,
     Question,
@@ -23,7 +24,7 @@ from ..models import (
 )
 from ..schemas import QuestionIn, ReorderIn, StatusIn, SurveyIn, SurveyPatch
 from ..services import audit, files
-from ..services import importer, logic, qtypes, timing
+from ..services import importer, logic, new_latin, qtypes, timing
 from ..services import permissions as perms
 from ..services.surveys import (
     can_manage,
@@ -64,8 +65,10 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "id": s.id,
         "title_uz": s.title_uz,
         "title_ru": s.title_ru,
+        "title_oz": s.title_oz,
         "description_uz": s.description_uz,
         "description_ru": s.description_ru,
+        "description_oz": s.description_oz,
         "start_date": s.start_date,
         "end_date": s.end_date,
         "survey_type": s.survey_type,
@@ -78,6 +81,7 @@ def survey_out(db: Session, user: User, s: Survey) -> dict:
         "allow_edit": s.allow_edit,
         "thanks_uz": s.thanks_uz,
         "thanks_ru": s.thanks_ru,
+        "thanks_oz": s.thanks_oz,
         "status": s.status,
         "effective_status": effective_status(s),
         "estimated_minutes": s.estimated_minutes,
@@ -112,23 +116,26 @@ def question_out(db: Session, q: Question) -> dict:
         "position": q.position,
         "text_uz": q.text_uz,
         "text_ru": q.text_ru,
+        "text_oz": q.text_oz,
         "qtype": q.qtype,
         "required": q.required,
         "hint_uz": q.hint_uz,
         "hint_ru": q.hint_ru,
+        "hint_oz": q.hint_oz,
         "image_url": q.image_url,
         "min_choices": q.min_choices,
         "max_choices": q.max_choices,
         "allow_other": q.allow_other,
         "description_uz": q.description_uz,
         "description_ru": q.description_ru,
+        "description_oz": q.description_oz,
         "video_url": q.video_url,
         "hidden": q.hidden,
         "settings": q.settings or {},
         "time_limit_seconds": q.time_limit_seconds,
         "logic": q.logic,
         "options": [
-            {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
+            {"id": o.id, "position": o.position, "text_uz": o.text_uz, "text_ru": o.text_ru, "text_oz": o.text_oz, "image_url": o.image_url}
             for o in live_options(db, q.id)
         ],
     }
@@ -144,7 +151,7 @@ def list_surveys(status: str | None = None, q: str | None = None, user: User = D
         query = query.where(Survey.status == status)
     if q:
         like = f"%{q.strip()}%"
-        query = query.where(Survey.title_uz.ilike(like) | Survey.title_ru.ilike(like))
+        query = query.where(Survey.title_uz.ilike(like) | Survey.title_ru.ilike(like) | Survey.title_oz.ilike(like))
     return [survey_out(db, user, s) for s in db.scalars(query.order_by(Survey.updated_at.desc()))]
 
 
@@ -189,8 +196,10 @@ def _apply_managers(db: Session, user: User, survey: Survey, ids: list[int] | No
 FIELD_PERMS = {
     "title_uz": "survey_edit",
     "title_ru": "survey_edit",
+    "title_oz": "survey_edit",
     "description_uz": "survey_edit",
     "description_ru": "survey_edit",
+    "description_oz": "survey_edit",
     "estimated_minutes": "survey_edit",
     "start_date": "timer_manage",
     "end_date": "timer_manage",
@@ -204,6 +213,7 @@ FIELD_PERMS = {
     "allow_edit": "participants_manage",
     "thanks_uz": "survey_edit",
     "thanks_ru": "survey_edit",
+    "thanks_oz": "survey_edit",
 }
 
 
@@ -217,7 +227,7 @@ def _require_fields(allowed: set[str], changed: set[str]) -> None:
 @router.post("/surveys")
 def create_survey(body: SurveyIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     perms.require(user, "survey_create")
-    if not body.title_uz.strip() and not body.title_ru.strip():
+    if not any_filled(body.title_uz, body.title_oz, body.title_ru):
         raise ApiError(422, "title_required")
     data = body.model_dump(exclude={"manager_ids"})
     # the title and description are part of creating; other settings need their own permission
@@ -230,7 +240,7 @@ def create_survey(body: SurveyIn, user: User = Depends(admin_only), db: Session 
     db.add(s)
     db.flush()
     _apply_managers(db, user, s, body.manager_ids)
-    audit.log(db, user, "survey.create", "survey", s.id, title=s.title_uz or s.title_ru)
+    audit.log(db, user, "survey.create", "survey", s.id, title=pick(s, "title", "uz"))
     db.commit()
     return survey_out(db, user, s)
 
@@ -240,7 +250,7 @@ def import_survey(body: dict = Body(...), user: User = Depends(admin_only), db: 
     """Create a draft survey from a JSON questionnaire (see services/importer.py)."""
     perms.require(user, "survey_create")
     s = importer.import_survey(db, body, user)
-    audit.log(db, user, "survey.import", "survey", s.id, title=s.title_uz or s.title_ru)
+    audit.log(db, user, "survey.import", "survey", s.id, title=pick(s, "title", "uz"))
     db.commit()
     return survey_out(db, user, s)
 
@@ -271,10 +281,10 @@ def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_
     data = {k: v for k, v in data.items() if (timing.aware(getattr(s, k)) if k in ("opens_at", "closes_at") else getattr(s, k)) != v}
     if data:
         _require_fields(perms.survey_permissions(db, user, s), set(data))
-    content_fields = {"title_uz", "title_ru", "description_uz", "description_ru"}
+    content_fields = {f"{f}_{c}" for f in ("title", "description") for c in LANGS}
     for k, v in data.items():
         setattr(s, k, v)
-    if not (s.title_uz.strip() or s.title_ru.strip()):
+    if not any_filled(s.title_uz, s.title_oz, s.title_ru):
         raise ApiError(422, "title_required")
     _sync_window(s, set(data))
     _check_dates(s)
@@ -287,7 +297,7 @@ def update_survey(survey_id: int, body: SurveyPatch, user: User = Depends(admin_
 
 
 def _validate_for_publish(db: Session, s: Survey) -> None:
-    if not s.title_uz.strip() or not s.title_ru.strip():
+    if not any_filled(s.title_uz, s.title_oz, s.title_ru):
         raise ApiError(422, "title_required")
     questions = [q for q in live_questions(db, s.id) if not q.hidden]
     if not any(q.qtype not in qtypes.NO_ANSWER_TYPES for q in questions):
@@ -295,7 +305,7 @@ def _validate_for_publish(db: Session, s: Survey) -> None:
     for q in questions:
         opts = live_options(db, q.id)
         _validate_question_fields(
-            q.text_uz, q.text_ru, q.qtype, [(o.text_uz, o.text_ru) for o in opts],
+            (q.text_uz, q.text_oz, q.text_ru), q.qtype, [(o.text_uz, o.text_oz, o.text_ru) for o in opts],
             q.min_choices, q.max_choices, q.allow_other, question_id=q.id,
         )
         try:
@@ -348,7 +358,7 @@ def delete_survey(survey_id: int, user: User = Depends(admin_only), db: Session 
     s.deleted_at = utcnow()
     if s.status == "active":
         s.status = "paused"
-    audit.log(db, user, "survey.delete", "survey", s.id, title=s.title_uz or s.title_ru)
+    audit.log(db, user, "survey.delete", "survey", s.id, title=pick(s, "title", "uz"))
     db.commit()
     return {"ok": True}
 
@@ -362,6 +372,9 @@ def duplicate_survey(survey_id: int, user: User = Depends(admin_only), db: Sessi
         title_ru=f"{src.title_ru} (копия)" if src.title_ru else "",
         description_uz=src.description_uz,
         description_ru=src.description_ru,
+        title_oz=f"{src.title_oz} (нусха)" if src.title_oz else "",
+        description_oz=src.description_oz,
+        thanks_oz=src.thanks_oz,
         start_date=src.start_date,
         end_date=src.end_date,
         survey_type=src.survey_type,
@@ -391,14 +404,15 @@ def duplicate_survey(survey_id: int, user: User = Depends(admin_only), db: Sessi
 
 
 def _validate_question_fields(
-    text_uz, text_ru, qtype, options, min_choices, max_choices, allow_other, question_id=None
+    texts, qtype, options, min_choices, max_choices, allow_other, question_id=None
 ) -> None:
+    """`texts` and every option: (uz, oz, ru). One language is enough, nothing is translated."""
     extra = {"question_id": question_id} if question_id else None
-    if not text_uz.strip() or not text_ru.strip():
+    if not any_filled(*texts):
         raise ApiError(422, "question_text_required", extra)
     if qtype in qtypes.OPTION_TYPES:
         qtypes.check_options(qtype, len(options), question_id)
-        if any(not uz.strip() or not ru.strip() for uz, ru in options):
+        if any(not any_filled(*o) for o in options):
             raise ApiError(422, "option_text_required", extra)
     if qtype in ("multiple", "image_choice"):
         available = len(options) + (1 if allow_other else 0)
@@ -422,10 +436,14 @@ def _sync_options(db: Session, q: Question, items) -> None:
         image = item.image_url.strip() if q.qtype == "image_choice" else ""
         if item.id and item.id in existing:
             o = existing[item.id]
-            o.text_uz, o.text_ru, o.position, o.image_url = item.text_uz.strip(), item.text_ru.strip(), pos, image
+            o.text_uz, o.text_ru, o.text_oz = item.text_uz.strip(), item.text_ru.strip(), item.text_oz.strip()
+            o.position, o.image_url = pos, image
             keep.add(o.id)
         else:
-            db.add(Option(question_id=q.id, position=pos, text_uz=item.text_uz.strip(), text_ru=item.text_ru.strip(), image_url=image))
+            db.add(Option(
+                question_id=q.id, position=pos, image_url=image,
+                text_uz=item.text_uz.strip(), text_ru=item.text_ru.strip(), text_oz=item.text_oz.strip(),
+            ))
     now = utcnow()
     for oid, o in existing.items():
         if oid not in keep:
@@ -436,19 +454,22 @@ def _apply_question(db: Session, q: Question, body: QuestionIn) -> None:
     has_options = body.qtype in qtypes.OPTION_TYPES
     opts = body.options if has_options else []
     _validate_question_fields(
-        body.text_uz, body.text_ru, body.qtype, [(o.text_uz, o.text_ru) for o in opts],
+        (body.text_uz, body.text_oz, body.text_ru), body.qtype, [(o.text_uz, o.text_oz, o.text_ru) for o in opts],
         body.min_choices, body.max_choices, body.allow_other,
     )
     multi = body.qtype == "multiple" or (body.qtype == "image_choice" and bool((body.settings or {}).get("multiple")))
     q.settings = qtypes.clean_settings(body.qtype, body.settings)
     q.text_uz = body.text_uz.strip()
     q.text_ru = body.text_ru.strip()
+    q.text_oz = body.text_oz.strip()
     q.qtype = body.qtype
     q.required = body.required and body.qtype not in qtypes.NO_ANSWER_TYPES
     q.hint_uz = body.hint_uz.strip()
     q.hint_ru = body.hint_ru.strip()
+    q.hint_oz = body.hint_oz.strip()
     q.description_uz = body.description_uz.strip()
     q.description_ru = body.description_ru.strip()
+    q.description_oz = body.description_oz.strip()
     q.image_url = body.image_url.strip()
     q.video_url = _check_video(body.video_url)
     q.hidden = body.hidden
@@ -564,16 +585,19 @@ def _copy_question(db: Session, q: Question, survey_id: int, position: int) -> Q
         position=position,
         text_uz=q.text_uz,
         text_ru=q.text_ru,
+        text_oz=q.text_oz,
         qtype=q.qtype,
         required=q.required,
         hint_uz=q.hint_uz,
         hint_ru=q.hint_ru,
+        hint_oz=q.hint_oz,
         image_url=q.image_url,
         min_choices=q.min_choices,
         max_choices=q.max_choices,
         allow_other=q.allow_other,
         description_uz=q.description_uz,
         description_ru=q.description_ru,
+        description_oz=q.description_oz,
         video_url=q.video_url,
         hidden=q.hidden,
         settings=dict(q.settings) if q.settings else None,
@@ -583,7 +607,7 @@ def _copy_question(db: Session, q: Question, survey_id: int, position: int) -> Q
     db.add(nq)
     db.flush()
     for o in live_options(db, q.id):
-        db.add(Option(question_id=nq.id, position=o.position, text_uz=o.text_uz, text_ru=o.text_ru, image_url=o.image_url))
+        db.add(Option(question_id=nq.id, position=o.position, text_uz=o.text_uz, text_ru=o.text_ru, text_oz=o.text_oz, image_url=o.image_url))
     return nq
 
 
@@ -668,3 +692,31 @@ async def upload_image(file: UploadFile = File(...), user: User = Depends(admin_
     files.put(db, f"upload/{name}", data, ext)
     db.commit()
     return {"url": f"/api/uploads/{name}"}
+
+
+# ---------------------------------------------------------------- new Latin alphabet
+
+
+class NewLatinIn(BaseModel):
+    keys: list[str]
+
+
+@router.get("/surveys/{survey_id}/new-latin")
+def new_latin_preview(survey_id: int, user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Uzbek Latin texts of the draft that would change in the new alphabet (nothing is saved)."""
+    s = get_survey_for(db, user, survey_id, "survey_edit")
+    perms.require_on(db, user, s, "question_manage")
+    return {"changes": new_latin.changes(db, s)}
+
+
+@router.post("/surveys/{survey_id}/new-latin")
+def new_latin_apply(survey_id: int, body: NewLatinIn, user: User = Depends(admin_only), db: Session = Depends(get_db)):
+    """Write the ticked changes into the draft. Published versions and answers stay as they are."""
+    s = get_survey_for(db, user, survey_id, "survey_edit")
+    perms.require_on(db, user, s, "question_manage")
+    n = new_latin.apply(db, s, set(body.keys))
+    if n:
+        mark_changed(s)
+        audit.log(db, user, "survey.new_latin", "survey", s.id, changed=n)
+    db.commit()
+    return {"changed": n}

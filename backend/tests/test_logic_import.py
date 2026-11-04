@@ -137,7 +137,7 @@ def test_both_routes(client):
     header = [c.value for c in ws[1]]
     assert "Telegram" not in header
     flat = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
-    assert "Tegishli emas" in flat
+    assert "Tegişli emas" in flat  # new Latin alphabet
     assert not any(x in v for v in flat for x in ("7301", "7312", "7313", "Resp"))
 
 

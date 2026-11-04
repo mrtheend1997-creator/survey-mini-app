@@ -48,6 +48,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(255), default="")
     last_name: Mapped[str] = mapped_column(String(255), default="")
     username: Mapped[str] = mapped_column(String(255), default="")
+    # "uz" (Uzbek Latin), "oz" (Uzbek Cyrillic) or "ru", see app/langs.py
     language: Mapped[str] = mapped_column(String(2), default="uz")
     # the user picked the language themselves; until then they get the default language
     language_chosen: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
@@ -89,8 +90,11 @@ class Survey(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title_uz: Mapped[str] = mapped_column(String(500), default="")
     title_ru: Mapped[str] = mapped_column(String(500), default="")
+    # Uzbek Cyrillic versions ("oz"), added later: empty means "not translated" (see app/langs.py)
+    title_oz: Mapped[str] = mapped_column(String(500), default="", server_default="")
     description_uz: Mapped[str] = mapped_column(Text, default="")
     description_ru: Mapped[str] = mapped_column(Text, default="")
+    description_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     survey_type: Mapped[str] = mapped_column(String(20), default="anonymous")
@@ -109,6 +113,7 @@ class Survey(Base):
     # message on the last screen (empty = the standard "thank you")
     thanks_uz: Mapped[str] = mapped_column(Text, default="", server_default="")
     thanks_ru: Mapped[str] = mapped_column(Text, default="", server_default="")
+    thanks_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     estimated_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -153,16 +158,19 @@ class Question(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     text_uz: Mapped[str] = mapped_column(Text, default="")
     text_ru: Mapped[str] = mapped_column(Text, default="")
+    text_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     qtype: Mapped[str] = mapped_column(String(20), default="single")
     required: Mapped[bool] = mapped_column(Boolean, default=True)
     hint_uz: Mapped[str] = mapped_column(Text, default="")
     hint_ru: Mapped[str] = mapped_column(Text, default="")
+    hint_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     image_url: Mapped[str] = mapped_column(String(1000), default="")
     min_choices: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_choices: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allow_other: Mapped[bool] = mapped_column(Boolean, default=False)
     description_uz: Mapped[str] = mapped_column(Text, default="", server_default="")
     description_ru: Mapped[str] = mapped_column(Text, default="", server_default="")
+    description_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     video_url: Mapped[str] = mapped_column(String(1000), default="", server_default="")
     # hidden questions stay in the builder but are left out when the survey is published
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
@@ -187,6 +195,7 @@ class Option(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     text_uz: Mapped[str] = mapped_column(Text, default="")
     text_ru: Mapped[str] = mapped_column(Text, default="")
+    text_oz: Mapped[str] = mapped_column(Text, default="", server_default="")
     image_url: Mapped[str] = mapped_column(String(1000), default="", server_default="")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -204,6 +213,7 @@ class Region(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     name_uz: Mapped[str] = mapped_column(String(255), default="")
     name_ru: Mapped[str] = mapped_column(String(255), default="")
+    name_oz: Mapped[str] = mapped_column(String(255), default="", server_default="")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

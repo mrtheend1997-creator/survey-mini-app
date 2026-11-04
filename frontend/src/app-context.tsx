@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError } from './api'
-import { translate, type Key, type Lang } from './i18n'
+import { HTML_LANG, isLang, translate, type Key, type Lang } from './i18n'
 import { getItem, setItem } from './storage'
 import type { Me } from './types'
 import { haptic } from './telegram'
@@ -29,14 +29,14 @@ function initialLang(): Lang {
   // only a language the user picked themselves is remembered; everyone else starts in Uzbek
   // (whatever language Telegram uses) until the profile from the server says otherwise
   const saved = getItem(LANG_KEY)
-  return saved === 'uz' || saved === 'ru' ? saved : 'uz'
+  return isLang(saved) ? saved : 'uz'
 }
 
 const LANG_KEY = 'fti_lang_chosen'
 
 /** The language from the profile: the user's own choice, or the default set by the Super Admin. */
 export function profileLang(m: Me): Lang {
-  return m.language === 'ru' ? 'ru' : 'uz'
+  return isLang(m.language) ? m.language : 'uz'
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -46,7 +46,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const nextId = useRef(1)
 
   useEffect(() => {
-    document.documentElement.lang = lang
+    document.documentElement.lang = HTML_LANG[lang]
   }, [lang])
 
   const setLang = useCallback((l: Lang) => {

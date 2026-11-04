@@ -69,8 +69,8 @@ export function defaultSettings(qtype: QType): QSettings {
     case 'matrix_multi':
       return {
         rows: [
-          { text_uz: '', text_ru: '' },
-          { text_uz: '', text_ru: '' },
+          { text_uz: '', text_ru: '', text_oz: '' },
+          { text_uz: '', text_ru: '', text_oz: '' },
         ],
       }
     case 'points':
@@ -78,7 +78,7 @@ export function defaultSettings(qtype: QType): QSettings {
     case 'file':
       return { formats: ['pdf', 'docx', 'jpg', 'png'], max_mb: 10, max_files: 1 }
     case 'contact':
-      return { fields: { full_name: true, phone: true }, purpose_uz: '', purpose_ru: '' }
+      return { fields: { full_name: true, phone: true }, purpose_uz: '', purpose_ru: '', purpose_oz: '' }
     case 'region':
       return { district: true }
     case 'image_choice':

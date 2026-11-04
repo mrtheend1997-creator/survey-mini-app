@@ -455,7 +455,7 @@ function AdminDialog({
                 value={name}
                 maxLength={255}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={lang === 'uz' ? 'Masalan: Aziz Karimov' : 'Например: Азиз Каримов'}
+                placeholder={{ uz: 'Masalan: Aziz Karimov', oz: 'Масалан: Азиз Каримов', ru: 'Например: Азиз Каримов' }[lang]}
               />
               <p className="mt-1.5 text-sm text-muted">{t('adminNameHint')}</p>
             </div>

@@ -28,6 +28,8 @@ still typing (minimum length, e-mail format, number range, points sum...) are ch
 
 import math
 import re
+
+from ..langs import pick
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
@@ -371,32 +373,51 @@ def problem(q: dict, value: dict | None, ctx: Context | None = None) -> str | No
 def option_label(q: dict, option_id: int, lang: str) -> str:
     for o in q.get("options", []):
         if o["id"] == option_id:
-            return o.get(f"text_{lang}") or o.get("text_uz") or ""
+            return pick(o, "text", lang)
     return f"#{option_id}"
 
 
 def row_label(q: dict, row_id: str, lang: str) -> str:
     for r in _settings(q).get("rows", []):
         if r["id"] == row_id:
-            return r.get(f"text_{lang}") or r.get("text_uz") or ""
+            return pick(r, "text", lang)
     return row_id
 
 
 CONTACT_LABELS = {
-    "uz": {"full_name": "F.I.Sh.", "phone": "Telefon", "email": "E-mail", "organization": "Tashkilot", "position": "Lavozim"},
+    "uz": {"full_name": "F.I.Ş.", "phone": "Telefon", "email": "E-mail", "organization": "Taşkilot", "position": "Lavozim"},
+    "oz": {"full_name": "Ф.И.Ш.", "phone": "Телефон", "email": "E-mail", "organization": "Ташкилот", "position": "Лавозим"},
     "ru": {"full_name": "ФИО", "phone": "Телефон", "email": "E-mail", "organization": "Организация", "position": "Должность"},
 }
+
+# system answers that are not written by the administrator
+LABELS = {
+    "yes": {"uz": "Ha", "oz": "Ҳа", "ru": "Да"},
+    "no": {"uz": "Yöq", "oz": "Йўқ", "ru": "Нет"},
+    "unsure": {"uz": "Javob berişga qiynalaman", "oz": "Жавоб беришга қийналаман", "ru": "Затрудняюсь ответить"},
+    "other": {"uz": "Boşqa", "oz": "Бошқа", "ru": "Другое"},
+}
+
+
+def label(key: str, lang: str) -> str:
+    return LABELS[key].get(lang) or LABELS[key]["uz"]
+
+
+def label_texts(key: str) -> dict:
+    """{"text_uz", "text_oz", "text_ru"} of a system answer, for the results page."""
+    return {f"text_{c}": v for c, v in LABELS[key].items()}
 
 
 def readable(q: dict, value: dict | None, lang: str, regions: dict[int, dict] | None = None) -> str:
     """Human readable answer, used in Excel export and the response viewer.
 
-    `regions` maps region id -> {"name_uz", "name_ru"} (needed for region questions).
+    `regions` maps region id -> {"name_uz", "name_oz", "name_ru"} (needed for region questions).
+    Free text written by the respondent is returned exactly as it was written.
     """
     if not value:
         return ""
-    yes_no = {"uz": ("Ha", "Yo'q", "Javob berishga qiynalaman"), "ru": ("Да", "Нет", "Затрудняюсь ответить")}[lang]
-    other_label = {"uz": "Boshqa", "ru": "Другое"}[lang]
+    yes_no = (label("yes", lang), label("no", lang), label("unsure", lang))
+    other_label = label("other", lang)
     qtype = q["qtype"]
     if "option_id" in value or "other" in value and "option_ids" not in value:
         if value.get("option_id") is not None:
@@ -412,7 +433,7 @@ def readable(q: dict, value: dict | None, lang: str, regions: dict[int, dict] | 
     if "number" in value:
         n = value["number"]
         text = str(int(n)) if isinstance(n, float) and n.is_integer() else str(n)
-        unit = _settings(q).get(f"unit_{lang}") or _settings(q).get("unit_uz") or ""
+        unit = pick(_settings(q), "unit", lang)
         return f"{text} {unit}".strip()
     if qtype == "yes_no":
         if value.get("unsure"):
@@ -442,14 +463,14 @@ def readable(q: dict, value: dict | None, lang: str, regions: dict[int, dict] | 
     if "files" in value:
         return "; ".join(f.get("name") or f["key"] for f in value["files"])
     if "contact" in value:
-        labels = CONTACT_LABELS[lang]
+        labels = CONTACT_LABELS.get(lang, CONTACT_LABELS["uz"])
         return "; ".join(f"{labels.get(k, k)}: {v}" for k, v in value["contact"].items() if k in CONTACT_FIELDS)
     if "region" in value:
         regions = regions or {}
 
         def name(rid):
             r = regions.get(rid)
-            return (r.get(f"name_{lang}") or r.get("name_uz")) if r else f"#{rid}"
+            return pick(r, "name", lang) if r else f"#{rid}"
 
         parts = [name(value["region"])]
         if value.get("district"):

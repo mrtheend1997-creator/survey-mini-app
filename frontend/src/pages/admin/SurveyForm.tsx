@@ -11,10 +11,13 @@ import type { AdminSurvey, SurveyStatus, SurveyType, TimeoutPolicy, UserRow } fr
 interface FormState {
   title_uz: string
   title_ru: string
+  title_oz: string
   description_uz: string
   description_ru: string
+  description_oz: string
   thanks_uz: string
   thanks_ru: string
+  thanks_oz: string
   opens_at: string
   closes_at: string
   survey_type: SurveyType
@@ -34,10 +37,13 @@ const TIME_PRESETS = ['5', '10', '15', '30', '60']
 const EMPTY: FormState = {
   title_uz: '',
   title_ru: '',
+  title_oz: '',
   description_uz: '',
   description_ru: '',
+  description_oz: '',
   thanks_uz: '',
   thanks_ru: '',
+  thanks_oz: '',
   opens_at: '',
   closes_at: '',
   survey_type: 'anonymous',
@@ -103,10 +109,13 @@ export default function SurveyForm() {
     setForm({
       title_uz: s.title_uz,
       title_ru: s.title_ru,
+      title_oz: s.title_oz ?? '',
       description_uz: s.description_uz,
       description_ru: s.description_ru,
+      description_oz: s.description_oz ?? '',
       thanks_uz: s.thanks_uz ?? '',
       thanks_ru: s.thanks_ru ?? '',
+      thanks_oz: s.thanks_oz ?? '',
       opens_at: s.opens_at ?? '',
       closes_at: s.closes_at ?? '',
       survey_type: s.survey_type,
@@ -129,10 +138,13 @@ export default function SurveyForm() {
     const body = {
       title_uz: form.title_uz,
       title_ru: form.title_ru,
+      title_oz: form.title_oz,
       description_uz: form.description_uz,
       description_ru: form.description_ru,
+      description_oz: form.description_oz,
       thanks_uz: form.thanks_uz,
       thanks_ru: form.thanks_ru,
+      thanks_oz: form.thanks_oz,
       opens_at: form.opens_at || null,
       closes_at: form.closes_at || null,
       survey_type: form.survey_type,
@@ -229,24 +241,30 @@ export default function SurveyForm() {
             label={t('surveyTitle')}
             required
             uz={form.title_uz}
+            oz={form.title_oz}
             ru={form.title_ru}
             onUz={(v) => set('title_uz', v)}
+            onOz={(v) => set('title_oz', v)}
             onRu={(v) => set('title_ru', v)}
           />
           <Bilingual
             label={t('description')}
             multiline
             uz={form.description_uz}
+            oz={form.description_oz}
             ru={form.description_ru}
             onUz={(v) => set('description_uz', v)}
+            onOz={(v) => set('description_oz', v)}
             onRu={(v) => set('description_ru', v)}
           />
           <Bilingual
             label={t('thanksMessage')}
             multiline
             uz={form.thanks_uz}
+            oz={form.thanks_oz}
             ru={form.thanks_ru}
             onUz={(v) => set('thanks_uz', v)}
+            onOz={(v) => set('thanks_oz', v)}
             onRu={(v) => set('thanks_ru', v)}
           />
         </fieldset>

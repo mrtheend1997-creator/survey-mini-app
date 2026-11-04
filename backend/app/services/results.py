@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Answer, Region, Response, Survey, SurveyVersion
-from .answers import rating_values, readable
+from ..langs import LANGS
+from .answers import label_texts, rating_values, readable
 
 
 def merged_questions(db: Session, survey: Survey, version_id: int | None = None) -> list[dict]:
@@ -88,13 +89,18 @@ def _pct(n: int, total: int) -> float:
 def region_names(db: Session) -> dict[int, dict]:
     """All regions and districts, deleted ones too (old answers may point to them)."""
     return {
-        rid: {"name_uz": uz, "name_ru": ru}
-        for rid, uz, ru in db.execute(select(Region.id, Region.name_uz, Region.name_ru)).all()
+        rid: {"name_uz": uz, "name_ru": ru, "name_oz": oz}
+        for rid, uz, ru, oz in db.execute(select(Region.id, Region.name_uz, Region.name_ru, Region.name_oz)).all()
     }
 
 
-def _item(key, uz: str, ru: str, count: int, n: int, **extra) -> dict:
-    return {"option_id": key, "text_uz": uz, "text_ru": ru, "count": count, "percent": _pct(count, n), **extra}
+def _texts(src: dict, field: str = "text") -> dict:
+    # versions published before Uzbek Cyrillic was added have no "_oz" texts
+    return {f"text_{c}": src.get(f"{field}_{c}") or "" for c in LANGS}
+
+
+def _item(key, src: dict, count: int, n: int, field: str = "text", **extra) -> dict:
+    return {"option_id": key, **_texts(src, field), "count": count, "percent": _pct(count, n), **extra}
 
 
 def _avg(nums: list) -> float | None:
@@ -117,19 +123,19 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
                 counts["other"] += 1
                 other_texts.append(v["other"])
         items = [
-            _item(o["id"], o["text_uz"], o["text_ru"], counts.get(o["id"], 0), n, removed=o.get("removed", False), image_url=o.get("image_url", ""))
+            _item(o["id"], o, counts.get(o["id"], 0), n, removed=o.get("removed", False), image_url=o.get("image_url", ""))
             for o in options
         ]
         if q.get("allow_other") or counts.get("other"):
-            items.append(_item(None, "Boshqa", "Другое", counts.get("other", 0), n, removed=False))
+            items.append(_item(None, label_texts("other"), counts.get("other", 0), n, removed=False))
         return {"kind": "choice", "items": items, "other_texts": other_texts[-100:]}
     if qtype == "yes_no":
         yes = sum(1 for v in values if v.get("bool") is True)
         unsure = sum(1 for v in values if v.get("unsure"))
         no = n - yes - unsure
-        items = [_item("yes", "Ha", "Да", yes, n), _item("no", "Yo'q", "Нет", no, n)]
+        items = [_item("yes", label_texts("yes"), yes, n), _item("no", label_texts("no"), no, n)]
         if (q.get("settings") or {}).get("unsure") or unsure:
-            items.append(_item("unsure", "Javob berishga qiynalaman", "Затрудняюсь ответить", unsure, n))
+            items.append(_item("unsure", label_texts("unsure"), unsure, n))
         return {"kind": "choice", "items": items}
     if qtype in ("rating5", "rating10", "stars", "scale", "nps"):
         scale = rating_values(q)
@@ -140,7 +146,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
         out = {
             "kind": "rating",
             "average": _avg(ratings),
-            "items": [_item(i, str(i), str(i), counts.get(i, 0), n) for i in scale],
+            "items": [_item(i, {f"text_{c}": str(i) for c in LANGS}, counts.get(i, 0), n) for i in scale],
         }
         if qtype == "nps":
             promoters = sum(1 for r in ratings if r >= 9)
@@ -171,13 +177,12 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
             rows.append(
                 {
                     "id": r["id"],
-                    "text_uz": r["text_uz"],
-                    "text_ru": r["text_ru"],
+                    **_texts(r),
                     "answered": answered,
                     "cells": [{"option_id": o["id"], "count": counts.get(o["id"], 0), "percent": _pct(counts.get(o["id"], 0), answered)} for o in options],
                 }
             )
-        columns = [{"option_id": o["id"], "text_uz": o["text_uz"], "text_ru": o["text_ru"]} for o in options]
+        columns = [{"option_id": o["id"], **_texts(o)} for o in options]
         return {"kind": "matrix", "columns": columns, "rows": rows}
     if qtype == "ranking":
         positions: dict[int, list[int]] = defaultdict(list)
@@ -185,7 +190,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
             for pos, oid in enumerate(v.get("order") or [], 1):
                 positions[oid].append(pos)
         items = [
-            {**_item(o["id"], o["text_uz"], o["text_ru"], sum(1 for p in positions[o["id"]] if p == 1), n), "average": _avg(positions[o["id"]])}
+            {**_item(o["id"], o, sum(1 for p in positions[o["id"]] if p == 1), n), "average": _avg(positions[o["id"]])}
             for o in options
         ]
         items.sort(key=lambda x: (x["average"] is None, x["average"] or 0))
@@ -195,7 +200,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
         for v in values:
             for k, pts in (v.get("points") or {}).items():
                 sums[int(k)] += pts
-        items = [{**_item(o["id"], o["text_uz"], o["text_ru"], sums.get(o["id"], 0), sum(sums.values())), "average": round(sums.get(o["id"], 0) / n, 2) if n else None} for o in options]
+        items = [{**_item(o["id"], o, sums.get(o["id"], 0), sum(sums.values())), "average": round(sums.get(o["id"], 0) / n, 2) if n else None} for o in options]
         items.sort(key=lambda x: -x["count"])
         return {"kind": "points", "items": items, "total": (q.get("settings") or {}).get("total", 100)}
     if qtype == "pairwise":
@@ -206,7 +211,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
                 for oid in k.split("-"):
                     played[int(oid)] += 1
                 wins[winner] += 1
-        items = [_item(o["id"], o["text_uz"], o["text_ru"], wins.get(o["id"], 0), played.get(o["id"], 0)) for o in options]
+        items = [_item(o["id"], o, wins.get(o["id"], 0), played.get(o["id"], 0)) for o in options]
         items.sort(key=lambda x: -x["percent"])
         return {"kind": "ranking", "items": items, "pairwise": True}
     if qtype == "region":
@@ -216,7 +221,7 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
 
         def named(rid, count, total):
             r = regions.get(rid, {"name_uz": f"#{rid}", "name_ru": f"#{rid}"})
-            return _item(rid, r["name_uz"], r["name_ru"], count, total)
+            return _item(rid, r, count, total, field="name")
 
         return {
             "kind": "choice",

@@ -60,7 +60,7 @@ export default function LogicEditor({
   question: QuestionT | null
   qtype: QType
   settings: QSettings
-  options: { id?: number | null; text_uz: string; text_ru: string }[]
+  options: { id?: number | null; text_uz: string; text_ru: string; text_oz?: string }[]
   allQuestions: QuestionT[]
   disabled: boolean
 }) {
@@ -185,7 +185,7 @@ function CondEditor({
   cond: Cond
   kind: ReturnType<typeof logicKind>
   ops: CondOp[]
-  options: { id: number; text_uz: string; text_ru: string }[]
+  options: { id: number; text_uz: string; text_ru: string; text_oz?: string }[]
   unsure: boolean
   disabled: boolean
   onChange: (c: Cond) => void

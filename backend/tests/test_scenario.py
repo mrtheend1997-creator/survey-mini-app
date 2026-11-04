@@ -218,7 +218,8 @@ def test_question_types_validation(client):
     # invalid: choice with one option, missing translation
     bad = client.post(f"/api/admin/surveys/{sid}/questions", json=choice("x", "y", 1), headers=ADMIN)
     assert bad.json()["detail"]["code"] == "options_required"
-    bad = client.post(f"/api/admin/surveys/{sid}/questions", json={**choice("x", "", 2)}, headers=ADMIN)
+    # (one language is enough since Uzbek Cyrillic was added: see test_languages.py)
+    bad = client.post(f"/api/admin/surveys/{sid}/questions", json={**choice("", "", 2)}, headers=ADMIN)
     assert bad.json()["detail"]["code"] == "question_text_required"
 
     client.post(f"/api/admin/surveys/{sid}/publish", headers=ADMIN)

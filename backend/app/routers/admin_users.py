@@ -80,7 +80,7 @@ def update_user(user_id: int, body: UserPatch, user: User = Depends(super_only),
     return UserOut.model_validate(target).model_dump()
 
 
-SETTING_KEYS = ("org_name_uz", "org_name_ru", "support_contact", "default_language")
+SETTING_KEYS = ("org_name_uz", "org_name_ru", "org_name_oz", "support_contact", "default_language")
 
 
 def _settings(db: Session) -> dict:

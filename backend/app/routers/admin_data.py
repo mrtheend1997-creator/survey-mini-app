@@ -16,6 +16,7 @@ from ..auth import require_role
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
+from ..langs import LANG_PATTERN, LANGS
 from ..models import Answer, Response, StoredFile, Survey, SurveyVersion, User
 from ..services import audit, timing
 from ..services.answers import readable
@@ -99,6 +100,7 @@ def dashboard(
                 "id": s.id,
                 "title_uz": s.title_uz,
                 "title_ru": s.title_ru,
+                "title_oz": s.title_oz,
                 "status": effective_status(s),
                 "participants": total,
                 "completed": done,
@@ -136,7 +138,7 @@ def results(survey_id: int, version_id: int | None = None, user: User = Depends(
         {"id": v.id, "number": v.number, "created_at": v.created_at}
         for v in db.scalars(select(SurveyVersion).where(SurveyVersion.survey_id == s.id).order_by(SurveyVersion.number.desc()))
     ]
-    data["title_uz"], data["title_ru"] = s.title_uz, s.title_ru
+    data["title_uz"], data["title_ru"], data["title_oz"] = s.title_uz, s.title_ru, s.title_oz
     return data
 
 
@@ -157,7 +159,7 @@ def _excel_response(db: Session, user: User, s: Survey, lang: str, version_id: i
 @router.get("/surveys/{survey_id}/export.xlsx")
 def export_excel(
     survey_id: int,
-    lang: str = Query("ru", pattern="^(uz|ru)$"),
+    lang: str = Query("ru", pattern=LANG_PATTERN),
     version_id: int | None = None,
     user: User = Depends(staff),
     db: Session = Depends(get_db),
@@ -179,7 +181,7 @@ def _sign(payload: str) -> str:
 @router.post("/surveys/{survey_id}/export-link")
 def export_link(
     survey_id: int,
-    lang: str = Query("ru", pattern="^(uz|ru)$"),
+    lang: str = Query("ru", pattern=LANG_PATTERN),
     version_id: int | None = None,
     user: User = Depends(staff),
     db: Session = Depends(get_db),
@@ -198,7 +200,7 @@ def export_by_link(token: str, db: Session = Depends(get_db)):
     try:
         sid, lang, vid, uid, exp, sig = token.split(".")
         payload = ".".join((sid, lang, vid, uid, exp))
-        ok = hmac.compare_digest(_sign(payload), sig) and int(exp) >= _time.time() and lang in ("uz", "ru")
+        ok = hmac.compare_digest(_sign(payload), sig) and int(exp) >= _time.time() and lang in LANGS
     except ValueError:
         ok = False
     if not ok:
@@ -255,7 +257,7 @@ def list_responses(
 
 
 @router.get("/responses/{response_id}")
-def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$"), user: User = Depends(staff), db: Session = Depends(get_db)):
+def response_detail(response_id: int, lang: str = Query("ru", pattern=LANG_PATTERN), user: User = Depends(staff), db: Session = Depends(get_db)):
     r = db.get(Response, response_id)
     if r is None:
         raise ApiError(404, "not_found")
@@ -285,6 +287,7 @@ def response_detail(response_id: int, lang: str = Query("ru", pattern="^(uz|ru)$
                 "question_id": q["id"],
                 "text_uz": q["text_uz"],
                 "text_ru": q["text_ru"],
+                "text_oz": q.get("text_oz", ""),
                 "answer": readable(q, answers.get(q["id"]), lang, regions),
                 # answered / not_applicable (the route skipped it) / empty (optional, left blank)
                 "status": "not_applicable"

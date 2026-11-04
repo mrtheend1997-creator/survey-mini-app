@@ -1,4 +1,8 @@
-"""Excel export of survey results (summary + one row per response)."""
+"""Excel export of survey results (summary + one row per response).
+
+Texts are written as Unicode strings (xlsx is UTF-8 inside), so ö ğ ş ç and ў қ ғ ҳ are kept;
+respondents' own answers are written exactly as they typed them.
+"""
 
 from io import BytesIO
 from zoneinfo import ZoneInfo
@@ -10,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..langs import pick
 from ..models import Answer, Response, Survey, SurveyVersion, User
 from .answers import readable
 from .results import merged_questions, region_names, survey_results
@@ -18,31 +23,60 @@ L = {
     "uz": {
         "summary": "Umumiy",
         "responses": "Javoblar",
-        "survey": "So'rovnoma",
-        "participants": "Ishtirokchilar",
+        "survey": "Sörovnoma",
+        "participants": "Iştirokçilar",
         "completed": "Yakunlangan",
         "in_progress": "Yakunlanmagan",
-        "rate": "Yakunlash foizi",
+        "rate": "Yakunlaş foizi",
         "question": "Savol",
         "option": "Javob varianti",
         "count": "Soni",
         "percent": "Foiz",
-        "average": "O'rtacha",
+        "average": "Örtaça",
         "no": "№",
         "status": "Holati",
-        "started": "Boshlangan",
+        "started": "Boşlangan",
         "finished": "Yakunlangan vaqti",
         "version": "Versiya",
-        "respondent": "Ishtirokchi",
+        "respondent": "Iştirokçi",
         "phone": "Telefon",
         "st_completed": "Yakunlangan",
         "st_in_progress": "Jarayonda",
         "st_timed_out": "Vaqt tugagan",
-        "not_applicable": "Tegishli emas",
+        "not_applicable": "Tegişli emas",
         "anonymous": "Anonim",
         "row": "Qator",
-        "avg_place": "O'rtacha o'rin",
+        "avg_place": "Örtaça örin",
         "nps": "NPS indeksi",
+    },
+    "oz": {
+        "summary": "Умумий",
+        "responses": "Жавоблар",
+        "survey": "Сўровнома",
+        "participants": "Иштирокчилар",
+        "completed": "Якунланган",
+        "in_progress": "Якунланмаган",
+        "rate": "Якунлаш фоизи",
+        "question": "Савол",
+        "option": "Жавоб варианти",
+        "count": "Сони",
+        "percent": "Фоиз",
+        "average": "Ўртача",
+        "no": "№",
+        "status": "Ҳолати",
+        "started": "Бошланган",
+        "finished": "Якунланган вақти",
+        "version": "Версия",
+        "respondent": "Иштирокчи",
+        "phone": "Телефон",
+        "st_completed": "Якунланган",
+        "st_in_progress": "Жараёнда",
+        "st_timed_out": "Вақт тугаган",
+        "not_applicable": "Тегишли эмас",
+        "anonymous": "Аноним",
+        "row": "Қатор",
+        "avg_place": "Ўртача ўрин",
+        "nps": "NPS индекси",
     },
     "ru": {
         "summary": "Сводка",
@@ -88,11 +122,11 @@ def _header(ws, row: int, values: list[str]) -> None:
 
 
 def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: int | None = None) -> bytes:
-    t = L[lang]
+    t = L.get(lang, L["uz"])
     tz = ZoneInfo(get_settings().app_timezone)
     res = survey_results(db, survey, version_id)
     questions = merged_questions(db, survey, version_id)
-    title = getattr(survey, f"title_{lang}") or survey.title_uz
+    title = pick(survey, "title", lang)
 
     wb = Workbook()
     ws = wb.active
@@ -113,15 +147,15 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     _header(ws, r, [t["question"], t["option"], t["count"], t["percent"]])
     r += 1
     for idx, q in enumerate(res["questions"], 1):
-        qtext = f"{idx}. {q.get(f'text_{lang}') or q['text_uz']}"
+        qtext = f"{idx}. {pick(q, 'text', lang)}"
         stats = q["stats"]
         if stats["kind"] == "none":
             continue
         if stats["kind"] == "matrix":
             for row in stats["rows"]:
-                rtext = row.get(f"text_{lang}") or row["text_uz"]
+                rtext = pick(row, "text", lang)
                 for col, cell in zip(stats["columns"], row["cells"]):
-                    ctext = col.get(f"text_{lang}") or col["text_uz"]
+                    ctext = pick(col, "text", lang)
                     ws.append([qtext, f"{rtext} — {ctext}", cell["count"], cell["percent"] / 100])
                     ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
                     qtext = ""
@@ -129,14 +163,14 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
         if stats["kind"] in ("ranking", "points"):
             for item in stats["items"]:
                 extra = item.get("average") if stats["kind"] == "ranking" and not stats.get("pairwise") else item["percent"] / 100
-                ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], extra])
+                ws.append([qtext, pick(item, "text", lang), item["count"], extra])
                 if stats["kind"] != "ranking" or stats.get("pairwise"):
                     ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
                 qtext = ""
             continue
         if stats["kind"] in ("choice", "rating"):
             for item in stats["items"]:
-                ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], item["percent"] / 100])
+                ws.append([qtext, pick(item, "text", lang), item["count"], item["percent"] / 100])
                 ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
                 qtext = ""
             if stats.get("average") is not None:
@@ -159,7 +193,7 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     if not anonymous:
         head += [t["respondent"], "Telegram", t["phone"]]
     questions = [q for q in questions if q["qtype"] not in ("info", "section")]
-    head += [f"{i}. {q.get(f'text_{lang}') or q['text_uz']}" for i, q in enumerate(questions, 1)]
+    head += [f"{i}. {pick(q, 'text', lang)}" for i, q in enumerate(questions, 1)]
     regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
     _header(ws2, 1, head)
 

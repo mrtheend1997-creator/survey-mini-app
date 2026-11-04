@@ -8,6 +8,7 @@ from ..auth import require_role
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
+from ..langs import LANGS
 from ..models import User
 from ..services import audit, bot_welcome
 from ..services import permissions as perms
@@ -26,7 +27,7 @@ def _out(cfg: dict) -> dict:
     return {
         "welcome": cfg,
         "default": bot_welcome.clean(bot_welcome.DEFAULT),
-        "preview": {lang: bot_welcome.render(cfg, lang, url) for lang in ("uz", "ru")},
+        "preview": {lang: bot_welcome.render(cfg, lang, url) for lang in LANGS},
         "webapp_ready": url.startswith("https://"),
     }
 

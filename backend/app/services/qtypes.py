@@ -9,6 +9,7 @@ import re
 from datetime import date
 
 from ..errors import ApiError
+from ..langs import LANGS
 
 QTYPES = (
     "single",
@@ -88,7 +89,7 @@ def _str(v, limit: int) -> str:
 
 def _labels(s: dict, out: dict, *keys: str) -> None:
     for k in keys:
-        for lang in ("uz", "ru"):
+        for lang in LANGS:
             out[f"{k}_{lang}"] = _str(s.get(f"{k}_{lang}"), 100)
 
 
@@ -120,10 +121,10 @@ def _rows(raw) -> list[dict]:
                     rid = f"r{n}"
                     break
         seen.add(rid)
-        uz, ru = _str(r.get("text_uz"), 500), _str(r.get("text_ru"), 500)
-        if not uz or not ru:
+        texts = {f"text_{c}": _str(r.get(f"text_{c}"), 500) for c in LANGS}
+        if not any(texts.values()):
             raise ApiError(422, "row_text_required")
-        rows.append({"id": rid, "text_uz": uz, "text_ru": ru})
+        rows.append({"id": rid, **texts})
     return rows
 
 
@@ -180,8 +181,8 @@ def clean_settings(qtype: str, raw: dict | None) -> dict:
         if out["min"] is not None and out["max"] is not None and out["min"] > out["max"]:
             raise _bad("max")
         out["integer"] = bool(s.get("integer"))
-        out["unit_uz"] = _str(s.get("unit_uz"), 30)
-        out["unit_ru"] = _str(s.get("unit_ru"), 30)
+        for c in LANGS:
+            out[f"unit_{c}"] = _str(s.get(f"unit_{c}"), 30)
     elif qtype in ("matrix", "matrix_multi"):
         out["rows"] = _rows(s.get("rows"))
     elif qtype == "image_choice":
@@ -202,9 +203,9 @@ def clean_settings(qtype: str, raw: dict | None) -> dict:
         out["fields"] = {f: bool(fields.get(f)) for f in CONTACT_FIELDS}
         if not any(out["fields"].values()):
             raise _bad("fields")
-        out["purpose_uz"] = _str(s.get("purpose_uz"), 1000)
-        out["purpose_ru"] = _str(s.get("purpose_ru"), 1000)
-        if not out["purpose_uz"] or not out["purpose_ru"]:
+        for c in LANGS:
+            out[f"purpose_{c}"] = _str(s.get(f"purpose_{c}"), 1000)
+        if not any(out[f"purpose_{c}"] for c in LANGS):
             raise ApiError(422, "contact_purpose_required")
     elif qtype == "region":
         out["district"] = bool(s.get("district", True))
