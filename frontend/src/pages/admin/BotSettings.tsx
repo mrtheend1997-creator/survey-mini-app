@@ -5,12 +5,14 @@ import { api } from '../../api'
 import { useApp } from '../../app-context'
 import { Bilingual, Button, Card, ConfirmDialog, ErrorBox, Input, Label, Segmented, Spinner, Toggle } from '../../components/ui'
 import { useLoad } from '../../hooks'
+import { LANG_CODE, LANGS, type Lang } from '../../i18n'
 import { IconBtn } from './QuestionEditor'
 
 interface BotButton {
   type: 'webapp' | 'url'
   text_uz: string
   text_ru: string
+  text_oz?: string
   url: string
   visible: boolean
 }
@@ -21,6 +23,8 @@ interface Welcome {
   text_uz: string
   title_ru: string
   text_ru: string
+  title_oz?: string
+  text_oz?: string
   buttons: BotButton[]
 }
 interface Message {
@@ -30,7 +34,7 @@ interface Message {
 interface WelcomeOut {
   welcome: Welcome
   default: Welcome
-  preview: { uz: Message | null; ru: Message | null }
+  preview: Record<Lang, Message | null>
   webapp_ready: boolean
 }
 
@@ -40,7 +44,7 @@ export default function BotSettings() {
   const [w, setW] = useState<Welcome | null>(null)
   const [preview, setPreview] = useState<WelcomeOut['preview'] | null>(null)
   const [previewError, setPreviewError] = useState('')
-  const [previewLang, setPreviewLang] = useState<'uz' | 'ru'>(lang)
+  const [previewLang, setPreviewLang] = useState<Lang>(lang)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -123,10 +127,27 @@ export default function BotSettings() {
             ]}
           />
         </div>
-        <Bilingual label={t('botHeading')} uz={w.title_uz} ru={w.title_ru} onUz={(v) => set('title_uz', v)} onRu={(v) => set('title_ru', v)} />
-        <Bilingual label={t('botText')} multiline uz={w.text_uz} ru={w.text_ru} onUz={(v) => set('text_uz', v)} onRu={(v) => set('text_ru', v)} />
+        <Bilingual
+          label={t('botHeading')}
+          uz={w.title_uz}
+          oz={w.title_oz ?? ''}
+          ru={w.title_ru}
+          onUz={(v) => set('title_uz', v)}
+          onOz={(v) => set('title_oz', v)}
+          onRu={(v) => set('title_ru', v)}
+        />
+        <Bilingual
+          label={t('botText')}
+          multiline
+          uz={w.text_uz}
+          oz={w.text_oz ?? ''}
+          ru={w.text_ru}
+          onUz={(v) => set('text_uz', v)}
+          onOz={(v) => set('text_oz', v)}
+          onRu={(v) => set('text_ru', v)}
+        />
         <p className="text-sm text-muted">{t('botFormatHint')}</p>
-        <Button size="sm" variant="outline" onClick={() => setW({ ...w, title_uz: '', text_uz: '', title_ru: '', text_ru: '' })}>
+        <Button size="sm" variant="outline" onClick={() => setW({ ...w, title_uz: '', text_uz: '', title_oz: '', text_oz: '', title_ru: '', text_ru: '' })}>
           🧹 {t('botClear')}
         </Button>
       </Card>
@@ -165,8 +186,10 @@ export default function BotSettings() {
             <Bilingual
               label={t('botButtonText')}
               uz={b.text_uz}
+              oz={b.text_oz ?? ''}
               ru={b.text_ru}
               onUz={(v) => setButton(i, { text_uz: v })}
+              onOz={(v) => setButton(i, { text_oz: v })}
               onRu={(v) => setButton(i, { text_ru: v })}
             />
             {b.type === 'url' && (
@@ -183,7 +206,7 @@ export default function BotSettings() {
           <Button
             size="sm"
             variant="soft"
-            onClick={() => set('buttons', [...w.buttons, { type: 'url', text_uz: '', text_ru: '', url: 'https://', visible: true }])}
+            onClick={() => set('buttons', [...w.buttons, { type: 'url', text_uz: '', text_ru: '', text_oz: '', url: 'https://', visible: true }])}
           >
             ➕ {t('botAddLink')}
           </Button>
@@ -194,14 +217,7 @@ export default function BotSettings() {
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold">👁️ {t('botPreview')}</div>
           {w.languages === 'user' && (
-            <Segmented
-              value={previewLang}
-              onChange={setPreviewLang}
-              options={[
-                { value: 'uz', label: 'UZ' },
-                { value: 'ru', label: 'RU' },
-              ]}
-            />
+            <Segmented value={previewLang} onChange={setPreviewLang} options={LANGS.map((l) => ({ value: l, label: LANG_CODE[l] }))} />
           )}
         </div>
         {previewError ? (

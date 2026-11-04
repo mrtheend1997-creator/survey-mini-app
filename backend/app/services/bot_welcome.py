@@ -15,6 +15,7 @@ import re
 from sqlalchemy.orm import Session
 
 from ..errors import ApiError
+from ..langs import LANGS
 from ..models import AppSetting, User
 
 KEY = "bot_welcome"
@@ -26,15 +27,18 @@ LANG_MODES = ("both", "user")
 
 DEFAULT: dict = {
     "enabled": True,
-    # "both": one message with the Uzbek and the Russian text; "user": in the user's language
+    # "both": one message with every filled language (Uzbek Latin, Uzbek Cyrillic, Russian);
+    # "user": only in the user's language. The name is kept from when there were two languages.
     "languages": "both",
-    "title_uz": "👋 FTI Survey platformasiga xush kelibsiz!",
-    "text_uz": "Elektron so‘rovnomalarda ishtirok eting va o‘z fikringizni bildiring.",
+    "title_uz": "👋 FTI Survey platformasiga xuş kelibsiz!",
+    "text_uz": "Elektron sörovnomalarda ishtirok eting va öz fikringizni bildiring.",
+    "title_oz": "👋 FTI Survey платформасига хуш келибсиз!",
+    "text_oz": "Электрон сўровномаларда иштирок этинг ва ўз фикрингизни билдиринг.",
     "title_ru": "👋 Добро пожаловать в FTI Survey!",
     "text_ru": "Участвуйте в электронных опросах и делитесь своим мнением.",
     "buttons": [
         # the button that opens the Mini App; it can be renamed or hidden, not removed
-        {"type": "webapp", "text_uz": "📋 So‘rovnomalar / Опросы", "text_ru": "📋 Опросы", "url": "", "visible": True},
+        {"type": "webapp", "text_uz": "📋 Sörovnomalar / Опросы", "text_oz": "📋 Сўровномалар", "text_ru": "📋 Опросы", "url": "", "visible": True},
     ],
 }
 
@@ -61,11 +65,11 @@ def clean(raw) -> dict:
         "enabled": bool(raw.get("enabled", True)),
         "languages": raw.get("languages") if raw.get("languages") in LANG_MODES else "both",
     }
-    for lang in ("uz", "ru"):
+    for lang in LANGS:
         out[f"title_{lang}"] = _str(raw.get(f"title_{lang}"), f"title_{lang}", MAX_TITLE)
         out[f"text_{lang}"] = _str(raw.get(f"text_{lang}"), f"text_{lang}", MAX_TEXT)
     if out["enabled"] and not (out["title_uz"] or out["text_uz"]):
-        raise _bad("text_uz")  # Uzbek is the main language and the fallback for Russian
+        raise _bad("text_uz")  # Uzbek Latin is the main language and the fallback for the others
     buttons = raw.get("buttons") or []
     if not isinstance(buttons, list) or len(buttons) > MAX_BUTTONS:
         raise _bad("buttons")
@@ -77,6 +81,7 @@ def clean(raw) -> dict:
             "type": b["type"],
             "text_uz": _str(b.get("text_uz"), "button_text", MAX_BUTTON_TEXT),
             "text_ru": _str(b.get("text_ru"), "button_text", MAX_BUTTON_TEXT),
+            "text_oz": _str(b.get("text_oz"), "button_text", MAX_BUTTON_TEXT),
             "url": "",
             "visible": bool(b.get("visible", True)),
         }
@@ -102,7 +107,9 @@ def get(db: Session) -> dict:
     if row is None or not isinstance(row.value, dict):
         return clean(DEFAULT)
     try:
-        return clean({**DEFAULT, **row.value})
+        # a message saved before Cyrillic existed gets no default Cyrillic text: Cyrillic users
+        # then see the administrator's own Uzbek text rather than a different built-in one
+        return clean({**DEFAULT, "title_oz": "", "text_oz": "", **row.value})
     except ApiError:
         return clean(DEFAULT)
 
@@ -123,9 +130,13 @@ def to_html(text: str) -> str:
     return BOLD_RE.sub(r"<b>\1</b>", out)
 
 
+def _filled(cfg: dict, lang: str) -> bool:
+    return bool(cfg.get(f"title_{lang}") or cfg.get(f"text_{lang}"))
+
+
 def _part(cfg: dict, lang: str) -> str:
-    if lang == "ru" and not (cfg["title_ru"] or cfg["text_ru"]):
-        lang = "uz"  # no Russian version: the Uzbek one is used
+    if not _filled(cfg, lang):
+        lang = "uz"  # no version in this language: the Uzbek Latin one is used
     parts = []
     if cfg[f"title_{lang}"]:
         parts.append(f"<b>{to_html(cfg[f'title_{lang}'])}</b>")
@@ -138,23 +149,21 @@ def render(cfg: dict, lang: str, app_url: str) -> dict | None:
     """The sendMessage fields (text, parse_mode, reply_markup) for a user, or None when off.
 
     lang is the user's language; it matters only when the message is sent in one language.
-    Missing Russian texts fall back to the Uzbek ones.
+    Missing texts fall back to the Uzbek Latin ones; nothing is transliterated.
     """
     if not cfg["enabled"]:
         return None
     if cfg["languages"] == "both":
-        text = _part(cfg, "uz")
-        if cfg["title_ru"] or cfg["text_ru"]:
-            text += "\n\n" + _part(cfg, "ru")
+        text = "\n\n".join(_part(cfg, c) for c in LANGS if c == "uz" or _filled(cfg, c))
         blang = "uz"
     else:
-        blang = lang if lang in ("uz", "ru") else "uz"
+        blang = lang if lang in LANGS else "uz"
         text = _part(cfg, blang)
     rows = []
     for b in cfg["buttons"]:
         if not b["visible"]:
             continue
-        label = b[f"text_{blang}"] or b["text_uz"]
+        label = b.get(f"text_{blang}") or b["text_uz"]
         if b["type"] == "webapp":
             if app_url.startswith("https://"):
                 rows.append([{"text": label, "web_app": {"url": app_url}}])

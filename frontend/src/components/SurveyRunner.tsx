@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useApp } from '../app-context'
-import { formatDate, pick } from '../i18n'
+import { formatDate, isFallback, pick } from '../i18n'
 import { isSection, routeOf, sectionOf } from '../logic'
 import { isAnswered, isMulti, problem, ratingValues } from '../qtypes'
 import { getItem, setItem } from '../storage'
 import { haptic, telegramUserId } from '../telegram'
 import type { AnswerValue, QuestionT, ResponseState, SurveyCard } from '../types'
 import QuestionInput, { QuestionMedia } from './QuestionInputs'
+import { LangSwitch } from './Header'
 import { Button, Input, Label, ProgressBar } from './ui'
 
 type Mode = 'live' | 'preview'
@@ -434,9 +435,16 @@ export default function SurveyRunner({
       <div className="flex min-h-screen flex-col">
         {previewBanner}
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6">
-          <button onClick={onExit} className="mb-4 self-start text-[15px] font-semibold text-muted">
-            {t('back')}
-          </button>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <button onClick={onExit} className="text-[15px] font-semibold text-muted">
+              {t('back')}
+            </button>
+            {/* the language can be changed at any moment: answers and the current question stay */}
+            <LangSwitch compact />
+          </div>
+          {(isFallback(survey, 'title', lang) || questions.some((x) => isFallback(x, 'text', lang))) && (
+            <div className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">🌐 {t('contentFallbackNote')}</div>
+          )}
           <div className="rounded-3xl border border-line bg-card p-6 shadow-sm">
             <div className="text-4xl">📋</div>
             <h1 className="mt-3 text-2xl font-bold leading-tight">{pick(survey, 'title', lang)}</h1>
@@ -556,11 +564,18 @@ export default function SurveyRunner({
                 </span>
               )}
             </span>
-            <span className={`w-20 text-right text-xs ${saveState === 'failed' ? 'text-red-600' : 'text-muted'}`}>
-              {mode === 'live' && saveState === 'saving' && t('saving')}
-              {mode === 'live' && saveState === 'saved' && `✓ ${t('saved')}`}
-              {mode === 'live' && saveState === 'failed' && '⚠️'}
-            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className={`text-right text-xs ${saveState === 'failed' ? 'text-red-600' : 'text-muted'}`} aria-live="polite">
+                {mode === 'live' && saveState === 'saving' && <span className="hidden min-[440px]:inline">{t('saving')}</span>}
+                {mode === 'live' && saveState === 'saved' && (
+                  <>
+                    ✓<span className="hidden min-[440px]:inline"> {t('saved')}</span>
+                  </>
+                )}
+                {mode === 'live' && saveState === 'failed' && '⚠️'}
+              </span>
+              <LangSwitch compact />
+            </div>
           </div>
           <ProgressBar value={progress} />
         </div>
@@ -583,6 +598,7 @@ export default function SurveyRunner({
             </span>
           )}
         </h2>
+        {isFallback(q, 'text', lang) && <p className="mt-1 text-xs text-muted">🌐 {t('contentFallbackNote')}</p>}
         {pick(q, 'description', lang) && <p className="mt-3 whitespace-pre-line text-base leading-relaxed">{pick(q, 'description', lang)}</p>}
         {pick(q, 'hint', lang) && <p className="mt-2 text-[15px] leading-relaxed text-muted">{pick(q, 'hint', lang)}</p>}
         <QuestionMedia q={q} />

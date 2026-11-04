@@ -266,7 +266,7 @@ def test_settings_validation(client):
         assert client.post(url, json=body, headers=ADMIN).status_code == 422, body
     r = client.post(url, json=q("contact", {"fields": {"phone": True}}), headers=ADMIN)
     assert r.json()["detail"]["code"] == "contact_purpose_required"
-    r = client.post(url, json=q("matrix", {"rows": [{"text_uz": "a", "text_ru": ""}]}, opts()), headers=ADMIN)
+    r = client.post(url, json=q("matrix", {"rows": [{"text_uz": "", "text_ru": "", "text_oz": ""}]}, opts()), headers=ADMIN)
     assert r.json()["detail"]["code"] == "row_text_required"
     # unknown keys are dropped
     r = client.post(url, json=q("stars", {"count": 4, "evil": "<script>"}), headers=ADMIN)

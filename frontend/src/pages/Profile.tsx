@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useApp } from '../app-context'
-import { Header } from '../components/Header'
+import { Header, useLangOptions } from '../components/Header'
 import { Button, Card, Segmented } from '../components/ui'
 import { useLoad, useTelegramBack } from '../hooks'
 import { pick } from '../i18n'
 
 export default function Profile() {
   const { me, t, lang, setLang } = useApp()
+  const langOptions = useLangOptions()
   const navigate = useNavigate()
   useTelegramBack('/')
   const stats = useLoad(() => api.get<{ completed_surveys: number }>('/api/my/stats'))
@@ -40,14 +41,7 @@ export default function Profile() {
         </Card>
         <Card>
           <div className="mb-2 font-semibold">{t('interfaceLang')}</div>
-          <Segmented
-            value={lang}
-            onChange={setLang}
-            options={[
-              { value: 'uz', label: t('langUz') },
-              { value: 'ru', label: t('langRu') },
-            ]}
-          />
+          <Segmented value={lang} onChange={setLang} options={langOptions} />
         </Card>
         {(settings.data?.support_contact || pick(settings.data, 'org_name', lang)) && (
           <Card>

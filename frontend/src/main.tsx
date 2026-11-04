@@ -27,6 +27,7 @@ class CrashScreen extends Component<{ children: ReactNode }, { failed: boolean }
     return (
       <div className="mx-auto max-w-md p-8 text-center leading-relaxed">
         <p className="font-semibold">Ilovada xatolik yuz berdi. Sahifani qayta yuklang.</p>
+        <p className="mt-2 font-semibold">Иловада хатолик юз берди. Саҳифани қайта юкланг.</p>
         <p className="mt-2 font-semibold">Произошла ошибка. Перезагрузите страницу.</p>
         <button className="mt-5 rounded-xl bg-navy-800 px-5 py-3 font-semibold text-white" onClick={() => location.reload()}>
           ↻

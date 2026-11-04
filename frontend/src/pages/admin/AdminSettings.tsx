@@ -3,15 +3,17 @@ import { api, qs } from '../../api'
 import { useApp } from '../../app-context'
 import { Button, Card, Input, Label, SectionTitle, Segmented, Spinner } from '../../components/ui'
 import { useLoad } from '../../hooks'
-import { auditLabel, formatDate } from '../../i18n'
+import { auditLabel, formatDate, type Lang } from '../../i18n'
+import { useLangOptions } from '../../components/Header'
 import LogoSettings from './LogoSettings'
 import RegionsSettings from './RegionsSettings'
 
 interface SettingsT {
   org_name_uz: string
   org_name_ru: string
+  org_name_oz?: string
   support_contact: string
-  default_language: 'uz' | 'ru'
+  default_language: Lang
 }
 interface AuditRow {
   id: number
@@ -24,6 +26,7 @@ interface AuditRow {
 
 export default function AdminSettings() {
   const { t, lang, setLang, me, toast, showError } = useApp()
+  const langOptions = useLangOptions()
   const isSuper = me?.role === 'super_admin'
   const manager = isSuper || me?.role === 'admin'
   const settings = useLoad(() => api.get<SettingsT>('/api/admin/settings'))
@@ -58,14 +61,7 @@ export default function AdminSettings() {
 
       <Card className="mt-4">
         <Label>{t('interfaceLang')}</Label>
-        <Segmented
-          value={lang}
-          onChange={setLang}
-          options={[
-            { value: 'uz', label: t('langUz') },
-            { value: 'ru', label: t('langRu') },
-          ]}
-        />
+        <Segmented value={lang} onChange={setLang} options={langOptions} />
       </Card>
 
       <LogoSettings />
@@ -81,6 +77,10 @@ export default function AdminSettings() {
             <Input value={form.org_name_uz} disabled={!isSuper} onChange={(e) => setForm({ ...form, org_name_uz: e.target.value })} />
           </div>
           <div>
+            <Label>{t('orgNameOz')}</Label>
+            <Input value={form.org_name_oz ?? ''} disabled={!isSuper} onChange={(e) => setForm({ ...form, org_name_oz: e.target.value })} />
+          </div>
+          <div>
             <Label>{t('orgNameRu')}</Label>
             <Input value={form.org_name_ru} disabled={!isSuper} onChange={(e) => setForm({ ...form, org_name_ru: e.target.value })} />
           </div>
@@ -90,14 +90,7 @@ export default function AdminSettings() {
           </div>
           <div>
             <Label>{t('defaultLanguage')}</Label>
-            <Segmented
-              value={form.default_language}
-              onChange={(v) => isSuper && setForm({ ...form, default_language: v })}
-              options={[
-                { value: 'uz', label: t('langUz') },
-                { value: 'ru', label: t('langRu') },
-              ]}
-            />
+            <Segmented value={form.default_language} onChange={(v) => isSuper && setForm({ ...form, default_language: v })} options={langOptions} />
           </div>
           {isSuper && (
             <Button variant="success" block onClick={save} loading={saving}>

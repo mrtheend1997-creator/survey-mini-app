@@ -24,8 +24,8 @@ log = logging.getLogger("fti-bot")
 
 # used only when the API can't be reached
 WELCOME = (
-    "👋 <b>FTI Survey</b> platformasiga xush kelibsiz!\n"
-    "Elektron so‘rovnomalarda ishtirok eting va o‘z fikringizni bildiring.\n\n"
+    "👋 <b>FTI Survey</b> platformasiga xuş kelibsiz!\n"
+    "Elektron sörovnomalarda ishtirok eting va öz fikringizni bildiring.\n\n"
     "👋 Добро пожаловать в <b>FTI Survey</b>!\n"
     "Участвуйте в электронных опросах и делитесь своим мнением."
 )
@@ -73,7 +73,7 @@ def handle(client: httpx.Client, update: dict) -> None:
         message = {
             "text": WELCOME,
             "parse_mode": "HTML",
-            "reply_markup": {"inline_keyboard": [[{"text": "📋 So‘rovnomalar / Опросы", "web_app": {"url": WEBAPP_URL}}]]},
+            "reply_markup": {"inline_keyboard": [[{"text": "📋 Sörovnomalar / Опросы", "web_app": {"url": WEBAPP_URL}}]]},
         }
     call(client, "sendMessage", chat_id=chat["id"], **message)
 

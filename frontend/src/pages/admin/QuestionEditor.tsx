@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import { useApp } from '../../app-context'
-import { Bilingual, Button, ConfirmDialog, Input, Label, Modal, Select, Toggle } from '../../components/ui'
+import { Bilingual, Button, ConfirmDialog, Input, LangFields, Label, Modal, Select, Toggle } from '../../components/ui'
+import { hasOldLetters, toNewLatin } from '../../alphabet'
+import { HTML_LANG, type Lang } from '../../i18n'
 import {
   CONTACT_FIELDS,
   FILE_FORMATS,
@@ -23,6 +25,7 @@ interface OptionDraft {
   id?: number
   text_uz: string
   text_ru: string
+  text_oz: string
   image_url: string
 }
 
@@ -33,12 +36,15 @@ interface RowDraft extends MatrixRow {
 interface Draft {
   text_uz: string
   text_ru: string
+  text_oz: string
   qtype: QType
   required: boolean
   hint_uz: string
   hint_ru: string
+  hint_oz: string
   description_uz: string
   description_ru: string
+  description_oz: string
   image_url: string
   video_url: string
   hidden: boolean
@@ -55,20 +61,23 @@ interface Draft {
 
 let keySeq = 0
 const newKey = () => `n${++keySeq}`
-const blankOption = (): OptionDraft => ({ key: newKey(), text_uz: '', text_ru: '', image_url: '' })
-const blankRow = (): RowDraft => ({ key: newKey(), text_uz: '', text_ru: '' })
+const blankOption = (): OptionDraft => ({ key: newKey(), text_uz: '', text_ru: '', text_oz: '', image_url: '' })
+const blankRow = (): RowDraft => ({ key: newKey(), text_uz: '', text_ru: '', text_oz: '' })
 
 function toDraft(q?: QuestionT | null): Draft {
   const settings = q ? { ...(q.settings ?? {}) } : defaultSettings('single')
   return {
     text_uz: q?.text_uz ?? '',
     text_ru: q?.text_ru ?? '',
+    text_oz: q?.text_oz ?? '',
     qtype: q?.qtype ?? 'single',
     required: q?.required ?? true,
     hint_uz: q?.hint_uz ?? '',
     hint_ru: q?.hint_ru ?? '',
+    hint_oz: q?.hint_oz ?? '',
     description_uz: q?.description_uz ?? '',
     description_ru: q?.description_ru ?? '',
+    description_oz: q?.description_oz ?? '',
     image_url: q?.image_url ?? '',
     video_url: q?.video_url ?? '',
     hidden: q?.hidden ?? false,
@@ -78,7 +87,7 @@ function toDraft(q?: QuestionT | null): Draft {
     max_choices: q?.max_choices ? String(q.max_choices) : '',
     allow_other: q?.allow_other ?? false,
     options: q?.options.length
-      ? q.options.map((o) => ({ key: `o${o.id}`, id: o.id, text_uz: o.text_uz, text_ru: o.text_ru, image_url: o.image_url ?? '' }))
+      ? q.options.map((o) => ({ key: `o${o.id}`, id: o.id, text_uz: o.text_uz, text_ru: o.text_ru, text_oz: o.text_oz ?? '', image_url: o.image_url ?? '' }))
       : [blankOption(), blankOption()],
     rows: (settings.rows ?? []).map((r) => ({ ...r, key: r.id ?? newKey() })),
     settings,
@@ -123,7 +132,7 @@ export default function QuestionEditor({
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }))
   const setS = (patch: Partial<QSettings>) => setD((x) => ({ ...x, settings: { ...x.settings, ...patch } }))
-  const setOpt = (key: string, field: 'text_uz' | 'text_ru' | 'image_url', v: string) =>
+  const setOpt = (key: string, field: 'text_uz' | 'text_ru' | 'text_oz' | 'image_url', v: string) =>
     setD((x) => ({ ...x, options: x.options.map((o) => (o.key === key ? { ...o, [field]: v } : o)) }))
   const moveOpt = (i: number, dir: -1 | 1) =>
     setD((x) => {
@@ -138,7 +147,7 @@ export default function QuestionEditor({
     setD((x) => ({ ...x, options: [...x.options, o] }))
     setTimeout(() => optionRefs.current[o.key]?.focus(), 50)
   }
-  const setRow = (key: string, field: 'text_uz' | 'text_ru', v: string) =>
+  const setRow = (key: string, field: 'text_uz' | 'text_ru' | 'text_oz', v: string) =>
     setD((x) => ({ ...x, rows: x.rows.map((r) => (r.key === key ? { ...r, [field]: v } : r)) }))
 
   const changeType = (qtype: QType) =>
@@ -184,16 +193,19 @@ export default function QuestionEditor({
   const save = async () => {
     setSaving(true)
     const settings: QSettings = { ...s }
-    if (isMatrix) settings.rows = d.rows.map((r) => ({ id: r.id, text_uz: r.text_uz, text_ru: r.text_ru }))
+    if (isMatrix) settings.rows = d.rows.map((r) => ({ id: r.id, text_uz: r.text_uz, text_ru: r.text_ru, text_oz: r.text_oz ?? '' }))
     const body = {
       text_uz: d.text_uz,
       text_ru: d.text_ru,
+      text_oz: d.text_oz,
       qtype: d.qtype,
       required: d.required,
       hint_uz: d.hint_uz,
       hint_ru: d.hint_ru,
+      hint_oz: d.hint_oz,
       description_uz: d.description_uz,
       description_ru: d.description_ru,
+      description_oz: d.description_oz,
       image_url: d.image_url,
       video_url: d.video_url.trim(),
       hidden: d.hidden,
@@ -209,7 +221,9 @@ export default function QuestionEditor({
       min_choices: multi && d.min_choices ? Number(d.min_choices) : null,
       max_choices: multi && d.max_choices ? Number(d.max_choices) : null,
       allow_other: OTHER_TYPES.has(d.qtype) ? d.allow_other : false,
-      options: hasOptions ? d.options.map((o) => ({ id: o.id ?? null, text_uz: o.text_uz, text_ru: o.text_ru, image_url: o.image_url })) : [],
+      options: hasOptions
+        ? d.options.map((o) => ({ id: o.id ?? null, text_uz: o.text_uz, text_ru: o.text_ru, text_oz: o.text_oz, image_url: o.image_url }))
+        : [],
     }
     try {
       if (question) await api.put(`/api/admin/questions/${question.id}`, body)
@@ -259,30 +273,24 @@ export default function QuestionEditor({
           <p className="mt-1.5 text-sm text-muted">{t(`qtHelp_${d.qtype}`)}</p>
         </div>
 
-        <div>
-          <Label required>{d.qtype === 'section' ? t('sectionTitle') : d.qtype === 'info' ? t('infoTitle') : t('questionUz')}</Label>
-          <textarea
-            rows={2}
-            value={d.text_uz}
-            onChange={(e) => set('text_uz', e.target.value)}
-            className="w-full rounded-xl border-2 border-line bg-card px-3.5 py-3 text-base outline-none focus:border-navy-500"
+        {(['uz', 'oz', 'ru'] as Lang[]).map((l) => (
+          <QuestionText
+            key={l}
+            lang={l}
+            qtype={d.qtype}
+            value={d[`text_${l}`]}
+            others={[d.text_uz, d.text_oz, d.text_ru]}
+            onChange={(v) => set(`text_${l}`, v)}
           />
-        </div>
-        <div>
-          <Label required>{d.qtype === 'section' ? t('sectionTitleRu') : d.qtype === 'info' ? t('infoTitleRu') : t('questionRu')}</Label>
-          <textarea
-            rows={2}
-            value={d.text_ru}
-            onChange={(e) => set('text_ru', e.target.value)}
-            className="w-full rounded-xl border-2 border-line bg-card px-3.5 py-3 text-base outline-none focus:border-navy-500"
-          />
-        </div>
+        ))}
 
         {(noAnswer || d.qtype === 'video') && (
           <Bilingual
             label={t('qDescription')}
             multiline
             uz={d.description_uz}
+            oz={d.description_oz}
+            onOz={(v) => set('description_oz', v)}
             ru={d.description_ru}
             onUz={(v) => set('description_uz', v)}
             onRu={(v) => set('description_ru', v)}
@@ -303,7 +311,7 @@ export default function QuestionEditor({
                       <IconBtn label="🗑️" title={t('delete')} onClick={() => setD((x) => ({ ...x, rows: x.rows.filter((y) => y.key !== r.key) }))} />
                     )}
                   </div>
-                  <LangPair uz={r.text_uz} ru={r.text_ru} onUz={(v) => setRow(r.key, 'text_uz', v)} onRu={(v) => setRow(r.key, 'text_ru', v)} />
+                  <LangFields compact values={{ uz: r.text_uz, oz: r.text_oz, ru: r.text_ru }} onChange={(l, v) => setRow(r.key, `text_${l}`, v)} />
                 </div>
               ))}
             </div>
@@ -330,11 +338,10 @@ export default function QuestionEditor({
                       {canOptions && <IconBtn label="🗑️" title={t('delete')} onClick={() => setRemoveKey(o.key)} />}
                     </div>
                   </div>
-                  <LangPair
-                    uz={o.text_uz}
-                    ru={o.text_ru}
-                    onUz={(v) => setOpt(o.key, 'text_uz', v)}
-                    onRu={(v) => setOpt(o.key, 'text_ru', v)}
+                  <LangFields
+                    compact
+                    values={{ uz: o.text_uz, oz: o.text_oz, ru: o.text_ru }}
+                    onChange={(l, v) => setOpt(o.key, `text_${l}`, v)}
                     inputRef={(el) => (optionRefs.current[o.key] = el)}
                   />
                   {d.qtype === 'image_choice' && (
@@ -390,7 +397,16 @@ export default function QuestionEditor({
         )}
 
         {d.qtype !== 'section' && (
-          <Bilingual label={t('hint')} multiline uz={d.hint_uz} ru={d.hint_ru} onUz={(v) => set('hint_uz', v)} onRu={(v) => set('hint_ru', v)} />
+          <Bilingual
+            label={t('hint')}
+            multiline
+            uz={d.hint_uz}
+            oz={d.hint_oz}
+            onOz={(v) => set('hint_oz', v)}
+            ru={d.hint_ru}
+            onUz={(v) => set('hint_uz', v)}
+            onRu={(v) => set('hint_ru', v)}
+          />
         )}
 
         {d.qtype !== 'section' && (
@@ -414,6 +430,8 @@ export default function QuestionEditor({
                 label={t('qDescription')}
                 multiline
                 uz={d.description_uz}
+                oz={d.description_oz}
+                onOz={(v) => set('description_oz', v)}
                 ru={d.description_ru}
                 onUz={(v) => set('description_uz', v)}
                 onRu={(v) => set('description_ru', v)}
@@ -486,29 +504,42 @@ export default function QuestionEditor({
   )
 }
 
-function LangPair({
-  uz,
-  ru,
-  onUz,
-  onRu,
-  inputRef,
-}: {
-  uz: string
-  ru: string
-  onUz: (v: string) => void
-  onRu: (v: string) => void
-  inputRef?: (el: HTMLInputElement | null) => void
-}) {
+const TEXT_LABEL = {
+  section: { uz: 'sectionTitle', oz: 'sectionTitleOz', ru: 'sectionTitleRu' },
+  info: { uz: 'infoTitle', oz: 'infoTitleOz', ru: 'infoTitleRu' },
+  question: { uz: 'questionUz', oz: 'questionOz', ru: 'questionRu' },
+} as const
+
+/** The question text in one language; at least one of the three must be filled. */
+function QuestionText({ lang, qtype, value, others, onChange }: { lang: Lang; qtype: QType; value: string; others: string[]; onChange: (v: string) => void }) {
+  const { t } = useApp()
+  const kind = qtype === 'section' ? 'section' : qtype === 'info' ? 'info' : 'question'
+  const anyFilled = others.some((x) => x.trim())
+  const missing = anyFilled && !value.trim()
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="w-8 shrink-0 text-xs font-bold text-muted">UZ</span>
-        <Input ref={inputRef} value={uz} onChange={(e) => onUz(e.target.value)} />
+    <div>
+      <Label required={!anyFilled}>{t(TEXT_LABEL[kind][lang])}</Label>
+      <div className="flex items-start gap-2">
+        <textarea
+          rows={2}
+          lang={HTML_LANG[lang]}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full rounded-xl border-2 bg-card px-3.5 py-3 text-base outline-none focus:border-navy-500 ${missing ? 'border-amber-300 dark:border-amber-700' : 'border-line'}`}
+        />
+        {lang === 'uz' && hasOldLetters(value) && (
+          <button
+            type="button"
+            title={t('toNewLatin')}
+            aria-label={t('toNewLatin')}
+            onClick={() => onChange(toNewLatin(value))}
+            className="mt-1.5 h-9 shrink-0 rounded-lg border border-line px-2 text-sm font-bold text-navy-700 hover:bg-navy-50 dark:text-navy-200 dark:hover:bg-white/10"
+          >
+            Ö
+          </button>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <span className="w-8 shrink-0 text-xs font-bold text-muted">RU</span>
-        <Input value={ru} onChange={(e) => onRu(e.target.value)} />
-      </div>
+      {missing && <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{t('trMissing')}</p>}
     </div>
   )
 }
@@ -568,6 +599,8 @@ function TypeSettings({ qtype, s, setS, surveyType }: { qtype: QType; s: QSettin
       <Bilingual
         label={t('labelMin')}
         uz={s.label_min_uz ?? ''}
+        oz={s.label_min_oz ?? ''}
+        onOz={(v) => setS({ label_min_oz: v })}
         ru={s.label_min_ru ?? ''}
         onUz={(v) => setS({ label_min_uz: v })}
         onRu={(v) => setS({ label_min_ru: v })}
@@ -575,6 +608,8 @@ function TypeSettings({ qtype, s, setS, surveyType }: { qtype: QType; s: QSettin
       <Bilingual
         label={t('labelMax')}
         uz={s.label_max_uz ?? ''}
+        oz={s.label_max_oz ?? ''}
+        onOz={(v) => setS({ label_max_oz: v })}
         ru={s.label_max_ru ?? ''}
         onUz={(v) => setS({ label_max_uz: v })}
         onRu={(v) => setS({ label_max_ru: v })}
@@ -715,6 +750,8 @@ function TypeSettings({ qtype, s, setS, surveyType }: { qtype: QType; s: QSettin
           <Bilingual
             label={t('unit')}
             uz={s.unit_uz ?? ''}
+            oz={s.unit_oz ?? ''}
+            onOz={(v) => setS({ unit_oz: v })}
             ru={s.unit_ru ?? ''}
             onUz={(v) => setS({ unit_uz: v })}
             onRu={(v) => setS({ unit_ru: v })}
@@ -776,10 +813,12 @@ function TypeSettings({ qtype, s, setS, surveyType }: { qtype: QType; s: QSettin
             required
             multiline
             uz={s.purpose_uz ?? ''}
+            oz={s.purpose_oz ?? ''}
+            onOz={(v) => setS({ purpose_oz: v })}
             ru={s.purpose_ru ?? ''}
             onUz={(v) => setS({ purpose_uz: v })}
             onRu={(v) => setS({ purpose_ru: v })}
-            placeholderUz="Natijalar haqida xabar berish uchun"
+            placeholderUz="Natijalar haqida xabar beriş uçun"
             placeholderRu="Чтобы сообщить вам о результатах"
           />
           <p className="text-sm text-muted">{t('contactMinimal')}</p>

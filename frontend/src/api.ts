@@ -5,6 +5,7 @@ export class ApiError extends Error {
   status: number
   code: string
   messageUz?: string
+  messageOz?: string
   messageRu?: string
   extra: Record<string, unknown>
   constructor(status: number, code: string, detail: Record<string, unknown> = {}) {
@@ -12,11 +13,12 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
     this.messageUz = detail.message_uz as string | undefined
+    this.messageOz = detail.message_oz as string | undefined
     this.messageRu = detail.message_ru as string | undefined
     this.extra = detail
   }
   text(lang: Lang): string | undefined {
-    return lang === 'uz' ? this.messageUz : this.messageRu
+    return { uz: this.messageUz, oz: this.messageOz ?? this.messageUz, ru: this.messageRu }[lang]
   }
 }
 

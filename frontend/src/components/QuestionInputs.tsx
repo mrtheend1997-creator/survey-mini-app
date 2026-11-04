@@ -555,7 +555,7 @@ function RatingInput({ q, value, lang, onChange }: { q: QuestionT; value: Answer
           ))}
         </div>
         <div className="mt-2 text-center text-sm font-semibold text-muted">{current ? `${current} / ${values.length}` : ''}</div>
-        {(s.label_min_uz || s.label_min_ru || s.label_max_uz || s.label_max_ru) && labels}
+        {(s.label_min_uz || s.label_min_ru || s.label_min_oz || s.label_max_uz || s.label_max_ru || s.label_max_oz) && labels}
       </div>
     )
   }

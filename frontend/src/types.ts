@@ -35,7 +35,7 @@ export interface Me {
   first_name: string
   last_name: string
   username: string
-  language: 'uz' | 'ru'
+  language: 'uz' | 'oz' | 'ru'
   language_chosen?: boolean
   role: Role
   can_admin: boolean
@@ -48,6 +48,7 @@ export interface OptionT {
   id?: number
   text_uz: string
   text_ru: string
+  text_oz?: string
   image_url?: string
   removed?: boolean
 }
@@ -56,6 +57,7 @@ export interface MatrixRow {
   id?: string
   text_uz: string
   text_ru: string
+  text_oz?: string
 }
 
 export type ContactField = 'full_name' | 'phone' | 'email' | 'organization' | 'position'
@@ -70,8 +72,10 @@ export interface QSettings {
   step?: number
   label_min_uz?: string
   label_min_ru?: string
+  label_min_oz?: string
   label_max_uz?: string
   label_max_ru?: string
+  label_max_oz?: string
   count?: number
   unsure?: boolean
   min_date?: string | null
@@ -83,6 +87,7 @@ export interface QSettings {
   integer?: boolean
   unit_uz?: string
   unit_ru?: string
+  unit_oz?: string
   rows?: MatrixRow[]
   multiple?: boolean
   total?: number
@@ -92,6 +97,7 @@ export interface QSettings {
   fields?: Partial<Record<ContactField, boolean>>
   purpose_uz?: string
   purpose_ru?: string
+  purpose_oz?: string
   district?: boolean
 }
 
@@ -100,8 +106,10 @@ export interface QuestionT {
   qtype: QType
   text_uz: string
   text_ru: string
+  text_oz?: string
   hint_uz: string
   hint_ru: string
+  hint_oz?: string
   image_url: string
   required: boolean
   min_choices: number | null
@@ -109,6 +117,7 @@ export interface QuestionT {
   allow_other: boolean
   description_uz?: string
   description_ru?: string
+  description_oz?: string
   video_url?: string
   hidden?: boolean
   settings?: QSettings
@@ -169,7 +178,8 @@ export interface RegionT {
   id: number
   name_uz: string
   name_ru: string
-  districts: { id: number; name_uz: string; name_ru: string }[]
+  name_oz?: string
+  districts: { id: number; name_uz: string; name_ru: string; name_oz?: string }[]
 }
 
 export type AnswerValue = {
@@ -197,8 +207,10 @@ export interface SurveyCard {
   id: number
   title_uz: string
   title_ru: string
+  title_oz?: string
   description_uz: string
   description_ru: string
+  description_oz?: string
   question_count: number
   estimated_minutes: number
   start_date: string | null
@@ -214,6 +226,7 @@ export interface SurveyCard {
   allow_edit?: boolean
   thanks_uz?: string
   thanks_ru?: string
+  thanks_oz?: string
   can_edit?: boolean
   locked?: boolean
   attempts_used?: number
@@ -245,8 +258,10 @@ export interface AdminSurvey {
   id: number
   title_uz: string
   title_ru: string
+  title_oz?: string
   description_uz: string
   description_ru: string
+  description_oz?: string
   start_date: string | null
   end_date: string | null
   survey_type: SurveyType
@@ -259,6 +274,7 @@ export interface AdminSurvey {
   allow_edit?: boolean
   thanks_uz?: string
   thanks_ru?: string
+  thanks_oz?: string
   status: SurveyStatus
   effective_status: SurveyStatus
   estimated_minutes: number | null
@@ -284,6 +300,7 @@ export interface StatItem {
   option_id: number | string | null
   text_uz: string
   text_ru: string
+  text_oz?: string
   count: number
   percent: number
   removed?: boolean
@@ -307,8 +324,15 @@ export interface QuestionResult extends QuestionT {
     | { kind: 'list'; values: string[] }
     | {
         kind: 'matrix'
-        columns: { option_id: number; text_uz: string; text_ru: string }[]
-        rows: { id: string; text_uz: string; text_ru: string; answered: number; cells: { option_id: number; count: number; percent: number }[] }[]
+        columns: { option_id: number; text_uz: string; text_ru: string; text_oz?: string }[]
+        rows: {
+          id: string
+          text_uz: string
+          text_ru: string
+          text_oz?: string
+          answered: number
+          cells: { option_id: number; count: number; percent: number }[]
+        }[]
       }
     | { kind: 'ranking'; items: StatItem[]; pairwise?: boolean }
     | { kind: 'points'; items: StatItem[]; total: number }
@@ -319,6 +343,7 @@ export interface SurveyResults {
   survey_id: number
   title_uz: string
   title_ru: string
+  title_oz?: string
   participants: number
   completed: number
   in_progress: number

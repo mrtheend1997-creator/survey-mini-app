@@ -88,8 +88,10 @@ def question_snapshot(db: Session, q: Question) -> dict:
         "qtype": q.qtype,
         "text_uz": q.text_uz,
         "text_ru": q.text_ru,
+        "text_oz": q.text_oz,
         "hint_uz": q.hint_uz,
         "hint_ru": q.hint_ru,
+        "hint_oz": q.hint_oz,
         "image_url": q.image_url,
         "required": q.required,
         "min_choices": q.min_choices,
@@ -97,12 +99,13 @@ def question_snapshot(db: Session, q: Question) -> dict:
         "allow_other": q.allow_other,
         "description_uz": q.description_uz,
         "description_ru": q.description_ru,
+        "description_oz": q.description_oz,
         "video_url": q.video_url,
         "settings": q.settings or {},
         "time_limit_seconds": q.time_limit_seconds,
         "logic": q.logic,
         "options": [
-            {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru, "image_url": o.image_url}
+            {"id": o.id, "text_uz": o.text_uz, "text_ru": o.text_ru, "text_oz": o.text_oz, "image_url": o.image_url}
             for o in live_options(db, q.id)
         ],
     }
@@ -112,8 +115,10 @@ def build_snapshot(db: Session, survey: Survey) -> dict:
     return {
         "title_uz": survey.title_uz,
         "title_ru": survey.title_ru,
+        "title_oz": survey.title_oz,
         "description_uz": survey.description_uz,
         "description_ru": survey.description_ru,
+        "description_oz": survey.description_oz,
         "survey_type": survey.survey_type,
         "questions": [question_snapshot(db, q) for q in live_questions(db, survey.id) if not q.hidden],
     }

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .errors import ApiError
+from .langs import DEFAULT as DEFAULT_LANG, LANGS
 from .models import AppSetting, User, utcnow
 
 ROLE_LEVEL = {"user": 0, "analyst": 1, "admin": 2, "super_admin": 3}
@@ -61,7 +62,7 @@ def validate_init_data(init_data: str, bot_token: str, max_age: int) -> dict:
 
 def default_language(db: Session) -> str:
     row = db.get(AppSetting, "default_language")
-    return row.value if row and row.value in ("uz", "ru") else "uz"
+    return row.value if row and row.value in LANGS else DEFAULT_LANG
 
 
 def _upsert_user(db: Session, tg: dict) -> User:

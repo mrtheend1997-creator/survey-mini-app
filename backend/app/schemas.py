@@ -1,9 +1,18 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
-Lang = Literal["uz", "ru"]
+from .langs import ALIASES
+
+
+def _lang_alias(v):
+    # "uz-Latn" / "uz-Cyrl" are accepted as well; anything unknown is refused by the Literal
+    return ALIASES.get(v.strip().lower(), v) if isinstance(v, str) else v
+
+
+# uz = Uzbek Latin, oz = Uzbek Cyrillic, ru = Russian (see app/langs.py)
+Lang = Annotated[Literal["uz", "oz", "ru"], BeforeValidator(_lang_alias)]
 Role = Literal["super_admin", "admin", "analyst", "user"]
 SurveyType = Literal["anonymous", "named", "registered"]
 SurveyStatus = Literal["draft", "active", "paused", "finished"]
@@ -45,8 +54,10 @@ class MeUpdate(BaseModel):
 class SurveyIn(BaseModel):
     title_uz: str = Field(default="", max_length=500)
     title_ru: str = Field(default="", max_length=500)
+    title_oz: str = Field(default="", max_length=500)
     description_uz: str = Field(default="", max_length=5000)
     description_ru: str = Field(default="", max_length=5000)
+    description_oz: str = Field(default="", max_length=5000)
     start_date: date | None = None
     end_date: date | None = None
     survey_type: SurveyType = "anonymous"
@@ -61,13 +72,16 @@ class SurveyIn(BaseModel):
     allow_edit: bool = False
     thanks_uz: str = Field(default="", max_length=2000)
     thanks_ru: str = Field(default="", max_length=2000)
+    thanks_oz: str = Field(default="", max_length=2000)
 
 
 class SurveyPatch(BaseModel):
     title_uz: str | None = Field(default=None, max_length=500)
     title_ru: str | None = Field(default=None, max_length=500)
+    title_oz: str | None = Field(default=None, max_length=500)
     description_uz: str | None = Field(default=None, max_length=5000)
     description_ru: str | None = Field(default=None, max_length=5000)
+    description_oz: str | None = Field(default=None, max_length=5000)
     start_date: date | None = None
     end_date: date | None = None
     survey_type: SurveyType | None = None
@@ -82,6 +96,7 @@ class SurveyPatch(BaseModel):
     allow_edit: bool | None = None
     thanks_uz: str | None = Field(default=None, max_length=2000)
     thanks_ru: str | None = Field(default=None, max_length=2000)
+    thanks_oz: str | None = Field(default=None, max_length=2000)
 
 
 class StatusIn(BaseModel):
@@ -95,22 +110,26 @@ class OptionIn(BaseModel):
     id: int | None = None
     text_uz: str = Field(default="", max_length=1000)
     text_ru: str = Field(default="", max_length=1000)
+    text_oz: str = Field(default="", max_length=1000)
     image_url: str = Field(default="", max_length=1000)
 
 
 class QuestionIn(BaseModel):
     text_uz: str = Field(default="", max_length=5000)
     text_ru: str = Field(default="", max_length=5000)
+    text_oz: str = Field(default="", max_length=5000)
     qtype: QuestionType = "single"
     required: bool = True
     hint_uz: str = Field(default="", max_length=2000)
     hint_ru: str = Field(default="", max_length=2000)
+    hint_oz: str = Field(default="", max_length=2000)
     image_url: str = Field(default="", max_length=1000)
     min_choices: int | None = Field(default=None, ge=0, le=1000)
     max_choices: int | None = Field(default=None, ge=1, le=1000)
     allow_other: bool = False
     description_uz: str = Field(default="", max_length=5000)
     description_ru: str = Field(default="", max_length=5000)
+    description_oz: str = Field(default="", max_length=5000)
     video_url: str = Field(default="", max_length=1000)
     hidden: bool = False
     settings: dict | None = None
@@ -123,12 +142,14 @@ class QuestionIn(BaseModel):
 class RegionIn(BaseModel):
     name_uz: str = Field(min_length=1, max_length=255)
     name_ru: str = Field(min_length=1, max_length=255)
+    name_oz: str = Field(default="", max_length=255)
     parent_id: int | None = None
 
 
 class RegionPatch(BaseModel):
     name_uz: str | None = Field(default=None, min_length=1, max_length=255)
     name_ru: str | None = Field(default=None, min_length=1, max_length=255)
+    name_oz: str | None = Field(default=None, max_length=255)
 
 
 class ReorderIn(BaseModel):
@@ -199,5 +220,6 @@ class AdminPatch(BaseModel):
 class SettingsIn(BaseModel):
     org_name_uz: str = Field(default="", max_length=255)
     org_name_ru: str = Field(default="", max_length=255)
+    org_name_oz: str = Field(default="", max_length=255)
     support_contact: str = Field(default="", max_length=255)
     default_language: Lang = "uz"

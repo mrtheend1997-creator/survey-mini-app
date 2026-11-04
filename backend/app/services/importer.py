@@ -2,7 +2,8 @@
 
 The result is an ordinary draft survey: every question, option and jump can be edited in the
 builder afterwards. Format (texts may be given once as "text" or per language as
-"text_uz" / "text_ru"; when only one is given it is used for both languages):
+"text_uz" / "text_oz" / "text_ru"; a single "text" is used for uz and ru, Cyrillic only
+from "text_oz"):
 
     {"title": "...", "description": "...", "thanks": "...", "survey_type": "anonymous",
      "allow_repeat": false,
@@ -31,7 +32,8 @@ SEEDS = {"seed:elektron_tijorat": "elektron_tijorat.json"}
 
 
 def _text(item: dict, field: str, lang: str, limit: int) -> str:
-    value = item.get(f"{field}_{lang}") or item.get(field) or ""
+    # a text given once ("text") is Latin script: it is used for uz and ru, never as Cyrillic
+    value = item.get(f"{field}_{lang}") or (item.get(field) if lang != "oz" else "") or ""
     if not isinstance(value, str):
         raise ApiError(422, "invalid_import", {"field": field})
     return value.strip()[:limit]
@@ -46,10 +48,13 @@ def import_survey(db: Session, data: dict, owner: User | None) -> Survey:
     s = Survey(
         title_uz=_text(data, "title", "uz", 500),
         title_ru=_text(data, "title", "ru", 500),
+        title_oz=_text(data, "title", "oz", 500),
         description_uz=_text(data, "description", "uz", 5000),
         description_ru=_text(data, "description", "ru", 5000),
+        description_oz=_text(data, "description", "oz", 5000),
         thanks_uz=_text(data, "thanks", "uz", 2000),
         thanks_ru=_text(data, "thanks", "ru", 2000),
+        thanks_oz=_text(data, "thanks", "oz", 2000),
         survey_type=survey_type,
         allow_repeat=bool(data.get("allow_repeat", False)),
         owner_id=owner.id if owner else None,
@@ -74,10 +79,13 @@ def import_survey(db: Session, data: dict, owner: User | None) -> Survey:
             qtype=qtype,
             text_uz=_text(item, "text", "uz", 5000),
             text_ru=_text(item, "text", "ru", 5000),
+        text_oz=_text(item, "text", "oz", 5000),
             hint_uz=_text(item, "hint", "uz", 2000),
             hint_ru=_text(item, "hint", "ru", 2000),
+        hint_oz=_text(item, "hint", "oz", 2000),
             description_uz=_text(item, "description", "uz", 5000),
             description_ru=_text(item, "description", "ru", 5000),
+        description_oz=_text(item, "description", "oz", 5000),
             required=bool(item.get("required", True)) and qtype not in qtypes.NO_ANSWER_TYPES,
             allow_other=bool(item.get("allow_other")) and qtype in qtypes.OTHER_TYPES,
             min_choices=item.get("min_choices") if qtype == "multiple" else None,
@@ -89,7 +97,7 @@ def import_survey(db: Session, data: dict, owner: User | None) -> Survey:
         opts = []
         for opos, o in enumerate(item.get("options") or []):
             texts = {"text": o} if isinstance(o, str) else o
-            opt = Option(question_id=q.id, position=opos, text_uz=_text(texts, "text", "uz", 1000), text_ru=_text(texts, "text", "ru", 1000))
+            opt = Option(question_id=q.id, position=opos, text_uz=_text(texts, "text", "uz", 1000), text_ru=_text(texts, "text", "ru", 1000), text_oz=_text(texts, "text", "oz", 1000))
             db.add(opt)
             opts.append(opt)
         db.flush()

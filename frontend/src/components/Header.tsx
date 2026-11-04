@@ -2,6 +2,16 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DEFAULT_LOGO, useLogoUrl } from '../branding'
 import { useApp } from '../app-context'
+import { LANGS, type Lang } from '../i18n'
+
+const SHORT = { uz: 'langShortUz', oz: 'langShortOz', ru: 'langShortRu' } as const
+const FULL = { uz: 'langUz', oz: 'langOz', ru: 'langRu' } as const
+
+/** Language names, always written in their own script (Özbekça, Ўзбекча, Русский). */
+export function useLangOptions(): { value: Lang; label: string }[] {
+  const { t } = useApp()
+  return LANGS.map((l) => ({ value: l, label: t(FULL[l]) }))
+}
 
 /** The organisation logo. Never cropped or recoloured; sits on a white plate so it reads in dark mode too. */
 export function Logo({ size, className = '' }: { size?: number; className?: string }) {
@@ -27,20 +37,27 @@ export function Logo({ size, className = '' }: { size?: number; className?: stri
   )
 }
 
+/** Three-way switch: Uzbek Latin, Uzbek Cyrillic, Russian. Changes the language at once,
+ *  without reloading, so a survey in progress keeps its place and its answers. */
 export function LangSwitch({ compact }: { compact?: boolean }) {
   const { lang, setLang, t } = useApp()
   return (
     <div className="flex items-center rounded-full border border-line bg-card p-0.5 text-[13px] font-semibold" role="group" aria-label="Language">
-      <span className="pl-1.5 pr-0.5" aria-hidden>
-        🌐
-      </span>
-      {(['uz', 'ru'] as const).map((l) => (
+      {!compact && (
+        <span className="pl-1.5 pr-0.5" aria-hidden>
+          🌐
+        </span>
+      )}
+      {LANGS.map((l) => (
         <button
           key={l}
-          onClick={() => setLang(l)}
-          className={`min-h-[34px] rounded-full px-2 transition ${lang === l ? 'bg-navy-800 text-white dark:bg-navy-500' : 'text-muted'}`}
+          lang={l === 'uz' ? 'uz-Latn' : l === 'oz' ? 'uz-Cyrl' : 'ru'}
+          title={t(FULL[l])}
+          aria-pressed={lang === l}
+          onClick={() => lang !== l && setLang(l)}
+          className={`min-h-[34px] rounded-full ${compact ? 'px-1.5' : 'px-2'} transition ${lang === l ? 'bg-navy-800 text-white dark:bg-navy-500' : 'text-muted'}`}
         >
-          {compact ? l.toUpperCase() : l === 'uz' ? t('langUz') : t('langRu')}
+          {t(SHORT[l])}
         </button>
       ))}
     </div>
