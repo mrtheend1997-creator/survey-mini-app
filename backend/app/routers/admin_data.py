@@ -19,7 +19,7 @@ from ..errors import ApiError
 from ..models import Answer, Response, StoredFile, Survey, SurveyVersion, User
 from ..services import audit, timing
 from ..services.answers import readable
-from ..services.excel import build_workbook
+from ..services.excel import cached_workbook
 from ..services.results import region_names, survey_results
 from ..services import permissions as perms
 from ..services.surveys import effective_status, get_survey_for, viewable_surveys_query
@@ -142,16 +142,24 @@ def results(survey_id: int, version_id: int | None = None, user: User = Depends(
 
 def _excel_response(db: Session, user: User, s: Survey, lang: str, version_id: int | None) -> HttpResponse:
     timing.expire_overdue(db, s)
-    content = build_workbook(db, s, lang, version_id)
+    content = cached_workbook(db, s, lang, version_id)
     audit.log(db, user, "results.export", "survey", s.id, lang=lang)
     db.commit()
-    stamp = datetime.now(_tz()).strftime("%Y%m%d-%H%M")
-    filename = f"fti-survey-{s.id}-{stamp}.xlsx"
+    filename = _file_name(s)
     return HttpResponse(
         content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{quote(filename)}"},
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{quote(filename)}",
+            # never keep an old copy anywhere on the way: each download must show today's data
+            "Cache-Control": "no-store, max-age=0",
+        },
     )
+
+
+def _file_name(s: Survey) -> str:
+    # seconds in the name, so a second download in the same minute isn't taken for the old file
+    return f"fti-survey-{s.id}-{datetime.now(_tz()).strftime('%Y%m%d-%H%M%S')}.xlsx"
 
 
 @router.get("/surveys/{survey_id}/export.xlsx")
@@ -169,6 +177,8 @@ def export_excel(
 # Telegram's in-app download (WebApp.downloadFile) can't send our Authorization header,
 # so the app first asks for a short-lived signed link.
 LINK_TTL = 300
+# a big survey on a sleeping free server can take a while, and Telegram first asks the user to confirm
+EXPORT_LINK_TTL = 900
 
 
 def _sign(payload: str) -> str:
@@ -185,11 +195,10 @@ def export_link(
     db: Session = Depends(get_db),
 ):
     s = get_survey_for(db, user, survey_id, "export")
-    payload = f"{s.id}.{lang}.{version_id or 0}.{user.id}.{int(_time.time()) + LINK_TTL}"
-    stamp = datetime.now(_tz()).strftime("%Y%m%d-%H%M")
+    payload = f"{s.id}.{lang}.{version_id or 0}.{user.id}.{int(_time.time()) + EXPORT_LINK_TTL}"
     return {
         "url": f"/api/admin/export/{payload}.{_sign(payload)}",
-        "file_name": f"fti-survey-{s.id}-{stamp}.xlsx",
+        "file_name": _file_name(s),
     }
 
 

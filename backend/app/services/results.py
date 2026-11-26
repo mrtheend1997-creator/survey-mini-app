@@ -46,18 +46,49 @@ def _local_day(dt: datetime) -> str:
     return dt.astimezone(ZoneInfo(get_settings().app_timezone)).date().isoformat()
 
 
-def survey_results(db: Session, survey: Survey, version_id: int | None = None) -> dict:
-    rq = select(Response).where(Response.survey_id == survey.id)
+RESPONSE_COLUMNS = (
+    Response.id,
+    Response.status,
+    Response.version_id,
+    Response.user_id,
+    Response.started_at,
+    Response.completed_at,
+    Response.respondent_info,
+    Response.skipped,
+)
+
+
+def load_responses(db: Session, survey: Survey, version_id: int | None = None) -> tuple[list, dict[int, dict[int, dict]]]:
+    """The survey's responses (light rows, oldest first) and their answers: response id -> question id -> value.
+
+    Two queries for the whole survey, whatever its size: only the needed columns are read (no ORM
+    objects), and answers are picked by a join instead of a huge `IN (...)` list, which PostgreSQL
+    refuses past 65 535 values and which is slow long before that.
+    """
+    rq = select(*RESPONSE_COLUMNS).where(Response.survey_id == survey.id)
+    aq = (
+        select(Answer.response_id, Answer.question_id, Answer.value)
+        .join(Response, Response.id == Answer.response_id)
+        .where(Response.survey_id == survey.id)
+    )
     if version_id:
         rq = rq.where(Response.version_id == version_id)
-    responses = list(db.scalars(rq))
+        aq = aq.where(Response.version_id == version_id)
+    responses = list(db.execute(rq.order_by(Response.id)))
+    answers: dict[int, dict[int, dict]] = defaultdict(dict)
+    for rid, qid, value in db.execute(aq):
+        answers[rid][qid] = value
+    return responses, answers
+
+
+def survey_results(db: Session, survey: Survey, version_id: int | None = None, loaded: tuple | None = None) -> dict:
+    responses, answers = loaded if loaded is not None else load_responses(db, survey, version_id)
     completed = [r for r in responses if r.status == "completed"]
-    completed_ids = [r.id for r in completed]
 
     answers_by_q: dict[int, list[dict]] = defaultdict(list)
-    if completed_ids:
-        for a in db.scalars(select(Answer).where(Answer.response_id.in_(completed_ids))):
-            answers_by_q[a.question_id].append(a.value)
+    for r in completed:
+        for qid, value in answers.get(r.id, {}).items():
+            answers_by_q[qid].append(value)
 
     questions = merged_questions(db, survey, version_id)
     regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
@@ -227,7 +258,8 @@ def question_stats(q: dict, values: list[dict], regions: dict[int, dict] | None 
         return {"kind": "none"}
     # text / short_text / video / date / time / contact / file
     if qtype == "contact":
-        texts = [" · ".join((v.get("contact") or {}).values()) for v in values]
+        texts = [" · ".join((v.get("contact") or {}).values()) for v in values[-100:]]
     else:
-        texts = [readable(q, v, "ru", regions) for v in values]
+        # only the last 100 are shown, so only those are formatted
+        texts = [readable(q, v, "ru", regions) for v in values[-100:]]
     return {"kind": "list", "values": texts[-100:]}

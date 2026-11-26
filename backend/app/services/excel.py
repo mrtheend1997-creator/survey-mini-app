@@ -1,18 +1,22 @@
 """Excel export of survey results (summary + one row per response)."""
 
+import threading
+import time
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.utils import get_column_letter
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Answer, Response, Survey, SurveyVersion, User
 from .answers import readable
-from .results import merged_questions, region_names, survey_results
+from .timing import aware
+from .results import load_responses, merged_questions, region_names, survey_results
 
 L = {
     "uz": {
@@ -77,41 +81,57 @@ L = {
 
 HEADER_FILL = PatternFill("solid", fgColor="0B2A4A")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
+HEADER_ALIGN = Alignment(wrap_text=True, vertical="center")
 
 
-def _header(ws, row: int, values: list[str]) -> None:
-    for col, v in enumerate(values, 1):
-        c = ws.cell(row=row, column=col, value=v)
+# The workbook is built in openpyxl's write-only mode: rows are streamed to a temporary file
+# instead of being kept as millions of cell objects, which made big surveys take minutes and
+# hundreds of MB on the small Render instance (512 MB, a fraction of a CPU).
+
+
+def _header(ws, values: list[str]) -> list:
+    cells = []
+    for v in values:
+        c = WriteOnlyCell(ws, value=v)
         c.fill = HEADER_FILL
         c.font = HEADER_FONT
-        c.alignment = Alignment(wrap_text=True, vertical="center")
+        c.alignment = HEADER_ALIGN
+        cells.append(c)
+    return cells
+
+
+def _pct_cell(ws, value):
+    c = WriteOnlyCell(ws, value=value)
+    c.number_format = "0.0%"
+    return c
+
+
+def _bold(ws, value):
+    c = WriteOnlyCell(ws, value=value)
+    c.font = Font(bold=True)
+    return c
 
 
 def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: int | None = None) -> bytes:
     t = L[lang]
     tz = ZoneInfo(get_settings().app_timezone)
-    res = survey_results(db, survey, version_id)
+    loaded = load_responses(db, survey, version_id)
+    responses, answers = loaded
+    res = survey_results(db, survey, version_id, loaded)
     questions = merged_questions(db, survey, version_id)
     title = getattr(survey, f"title_{lang}") or survey.title_uz
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = t["summary"]
-    ws["A1"] = t["survey"]
-    ws["B1"] = title
-    ws["A1"].font = Font(bold=True)
-    rows = [
-        (t["participants"], res["participants"]),
-        (t["completed"], res["completed"]),
-        (t["in_progress"], res["in_progress"]),
-        (t["rate"], f"{res['completion_rate']}%"),
-    ]
-    for i, (k, v) in enumerate(rows, start=2):
-        ws.cell(row=i, column=1, value=k)
-        ws.cell(row=i, column=2, value=v)
-    r = len(rows) + 3
-    _header(ws, r, [t["question"], t["option"], t["count"], t["percent"]])
-    r += 1
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(t["summary"])
+    for col, width in zip("ABCD", (60, 40, 14, 12)):
+        ws.column_dimensions[col].width = width
+    ws.append([_bold(ws, t["survey"]), title])
+    ws.append([t["participants"], res["participants"]])
+    ws.append([t["completed"], res["completed"]])
+    ws.append([t["in_progress"], res["in_progress"]])
+    ws.append([t["rate"], f"{res['completion_rate']}%"])
+    ws.append([])
+    ws.append(_header(ws, [t["question"], t["option"], t["count"], t["percent"]]))
     for idx, q in enumerate(res["questions"], 1):
         qtext = f"{idx}. {q.get(f'text_{lang}') or q['text_uz']}"
         stats = q["stats"]
@@ -122,22 +142,21 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
                 rtext = row.get(f"text_{lang}") or row["text_uz"]
                 for col, cell in zip(stats["columns"], row["cells"]):
                     ctext = col.get(f"text_{lang}") or col["text_uz"]
-                    ws.append([qtext, f"{rtext} — {ctext}", cell["count"], cell["percent"] / 100])
-                    ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
+                    ws.append([qtext, f"{rtext} — {ctext}", cell["count"], _pct_cell(ws, cell["percent"] / 100)])
                     qtext = ""
             continue
         if stats["kind"] in ("ranking", "points"):
             for item in stats["items"]:
-                extra = item.get("average") if stats["kind"] == "ranking" and not stats.get("pairwise") else item["percent"] / 100
+                if stats["kind"] == "ranking" and not stats.get("pairwise"):
+                    extra = item.get("average")
+                else:
+                    extra = _pct_cell(ws, item["percent"] / 100)
                 ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], extra])
-                if stats["kind"] != "ranking" or stats.get("pairwise"):
-                    ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
                 qtext = ""
             continue
         if stats["kind"] in ("choice", "rating"):
             for item in stats["items"]:
-                ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], item["percent"] / 100])
-                ws.cell(row=ws.max_row, column=4).number_format = "0.0%"
+                ws.append([qtext, item.get(f"text_{lang}") or item["text_uz"], item["count"], _pct_cell(ws, item["percent"] / 100)])
                 qtext = ""
             if stats.get("average") is not None:
                 ws.append(["", t["average"], stats["average"], None])
@@ -147,11 +166,6 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
             ws.append([qtext, t["average"], stats["average"], None])
         else:
             ws.append([qtext, "", q["answered"], None])
-        r = ws.max_row + 1
-    ws.column_dimensions["A"].width = 60
-    ws.column_dimensions["B"].width = 40
-    ws.column_dimensions["C"].width = 14
-    ws.column_dimensions["D"].width = 12
 
     ws2 = wb.create_sheet(t["responses"])
     anonymous = survey.survey_type == "anonymous"
@@ -161,31 +175,24 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
     questions = [q for q in questions if q["qtype"] not in ("info", "section")]
     head += [f"{i}. {q.get(f'text_{lang}') or q['text_uz']}" for i, q in enumerate(questions, 1)]
     regions = region_names(db) if any(q["qtype"] == "region" for q in questions) else {}
-    _header(ws2, 1, head)
+    for col in range(1, len(head) + 1):
+        ws2.column_dimensions[get_column_letter(col)].width = 18 if col <= 8 else 32
+    ws2.freeze_panes = "B2"
+    ws2.append(_header(ws2, head))
 
-    rq = select(Response).where(Response.survey_id == survey.id)
-    if version_id:
-        rq = rq.where(Response.version_id == version_id)
-    responses = list(db.scalars(rq.order_by(Response.id)))
     versions = {v.id: v.number for v in db.scalars(select(SurveyVersion).where(SurveyVersion.survey_id == survey.id))}
-    answers: dict[int, dict[int, dict]] = {}
-    if responses:
-        for a in db.scalars(select(Answer).where(Answer.response_id.in_([x.id for x in responses]))):
-            answers.setdefault(a.response_id, {})[a.question_id] = a.value
     users = {}
     if not anonymous:
-        uids = {x.user_id for x in responses if x.user_id}
-        if uids:
-            users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(uids)))}
+        if any(x.user_id for x in responses):
+            # a sub-select rather than a list of ids: no limit on how many respondents there are
+            respondents = select(Response.user_id).where(Response.survey_id == survey.id)
+            users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(respondents)))}
+
+    def stamp(dt):
+        return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M") if dt else ""
 
     for n, resp in enumerate(responses, 1):
-        row = [
-            n,
-            t.get(f"st_{resp.status}", t["st_in_progress"]),
-            resp.started_at.astimezone(tz).strftime("%Y-%m-%d %H:%M") if resp.started_at else "",
-            resp.completed_at.astimezone(tz).strftime("%Y-%m-%d %H:%M") if resp.completed_at else "",
-            versions.get(resp.version_id, ""),
-        ]
+        row = [n, t.get(f"st_{resp.status}", t["st_in_progress"]), stamp(aware(resp.started_at)), stamp(aware(resp.completed_at)), versions.get(resp.version_id, "")]
         if not anonymous:
             u = users.get(resp.user_id)
             info = resp.respondent_info or {}
@@ -198,10 +205,55 @@ def build_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: in
         skipped = set(resp.skipped or [])
         row += [t["not_applicable"] if q["id"] in skipped else readable(q, ra.get(q["id"]), lang, regions) for q in questions]
         ws2.append(row)
-    for col in range(1, len(head) + 1):
-        ws2.column_dimensions[get_column_letter(col)].width = 18 if col <= 8 else 32
-    ws2.freeze_panes = "B2"
 
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ------------------------------------------------------------------ short-lived cache
+#
+# Telegram may ask for the same link more than once, and an impatient tap on "Excel" starts another
+# download. On a small server every extra build slows all of them down, so a finished file is kept
+# for a short while and handed out again — but only while the data is exactly the same: any new or
+# changed response, answer or published version gives a new fingerprint and a fresh file.
+
+CACHE_SECONDS = 120
+CACHE_MAX = 4
+_cache: dict[tuple, tuple[float, bytes]] = {}
+_locks: dict[tuple, threading.Lock] = {}
+_guard = threading.Lock()
+
+
+def data_fingerprint(db: Session, survey: Survey, version_id: int | None = None) -> tuple:
+    rq = select(func.count(Response.id), func.max(Response.updated_at)).where(Response.survey_id == survey.id)
+    aq = (
+        select(func.count(Answer.id), func.max(Answer.updated_at))
+        .join(Response, Response.id == Answer.response_id)
+        .where(Response.survey_id == survey.id)
+    )
+    if version_id:
+        rq = rq.where(Response.version_id == version_id)
+        aq = aq.where(Response.version_id == version_id)
+    last_version = db.scalar(select(func.max(SurveyVersion.id)).where(SurveyVersion.survey_id == survey.id))
+    return (*db.execute(rq).one(), *db.execute(aq).one(), last_version, survey.updated_at, survey.survey_type)
+
+
+def cached_workbook(db: Session, survey: Survey, lang: str = "ru", version_id: int | None = None) -> bytes:
+    key = (survey.id, lang, version_id or 0, data_fingerprint(db, survey, version_id))
+    with _guard:
+        lock = _locks.setdefault(key[:3], threading.Lock())
+    # one build at a time per survey/language: a second request waits and reuses the first file
+    with lock:
+        now = time.monotonic()
+        hit = _cache.get(key)
+        if hit and now - hit[0] < CACHE_SECONDS:
+            return hit[1]
+        content = build_workbook(db, survey, lang, version_id)
+        with _guard:
+            for k in [k for k, (at, _) in _cache.items() if now - at >= CACHE_SECONDS or k[:3] == key[:3]]:
+                del _cache[k]
+            while len(_cache) >= CACHE_MAX:
+                del _cache[min(_cache, key=lambda k: _cache[k][0])]
+            _cache[key] = (now, content)
+        return content
