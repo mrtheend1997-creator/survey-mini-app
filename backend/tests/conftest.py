@@ -50,7 +50,10 @@ def auth(user_id: int, name: str = "Test", language_code: str = "uz") -> dict:
 
 @pytest.fixture()
 def client():
+    from app.services import excel
+
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    excel._cache.clear()  # ids repeat across tests, cached files must not
     with TestClient(app) as c:
         yield c

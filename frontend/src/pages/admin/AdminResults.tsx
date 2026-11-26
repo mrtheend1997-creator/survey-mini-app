@@ -19,9 +19,11 @@ export function useExcelDownload() {
       const link = await api.post<{ url: string; file_name: string }>(`/api/admin/surveys/${surveyId}/export-link${qs({ lang, version_id: versionId })}`)
       openDownload(link.url, link.file_name)
       toast(t('downloadStarted'), 'info')
+      // the file is still being prepared on the server: keep the button off for a moment,
+      // so repeated taps don't start more downloads of the same file
+      window.setTimeout(() => setBusy(false), 8000)
     } catch (e) {
       showError(e)
-    } finally {
       setBusy(false)
     }
   }
